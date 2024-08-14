@@ -1,0 +1,2 @@
+# noter
+rust notes tui
