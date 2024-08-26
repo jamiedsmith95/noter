@@ -1,102 +1,104 @@
 use std::{
-    default,
-    fmt::{self, Debug, Display},
-    io::{self, Result},
-    path::PathBuf,
+    borrow::Borrow, cell::RefCell, default, fmt::{self, Debug, Display}, io::{self, Result}, path::PathBuf, rc::Rc, sync::{Arc, Mutex}
 };
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use layout::Offset;
 use ratatui::{
     prelude::*,
     widgets::{
+        self,
         block::{Position, Title},
-        Block, Paragraph,
+        Block, List, ListState, Paragraph,
     },
 };
+use style::Styled;
 use symbols::border;
+use text::ToText;
 
-use crate::{list::List, note::Note, traits::ThisFrame, tui::Tui};
+use crate::{list::MyList, note::Note, traits::ThisFrame, tui::Tui};
+
+pub type RcRc<T> = Rc<RefCell<T>>;
+pub type ArcEx<T> = Arc<Mutex<T>>;
+
+pub fn arc_ex<T>(t: T) -> ArcEx<T> {
+    Arc::new(Mutex::new(t))
+}
+pub fn rc_rc<T>(t: T) -> RcRc<T> {
+    Rc::new(RefCell::new(t))
+}
 
 #[derive(Debug, Clone, Default)]
 pub enum InputMode {
     #[default]
     Normal,
     Insert,
+    EditTitle
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct Splash;
 
-#[derive(Debug, Clone)]
-pub enum CurrentFrame<T>
-where
-    T: ThisFrame + Display + Clone,
-{
-    Note(T),
-    Splash(T),
-    List(T),
+impl ThisFrame for Splash {
+    fn get_instructions(&self) -> Title {
+        Title::from(Line::from(vec![
+            " List Notes ".into(),
+            "<l>".blue().bold(),
+            " New Note ".into(),
+            "<n>".blue().bold(),
+            " Quit ".into(),
+            "<q>".red().bold(),
+        ]))
+    }
+    fn new() -> Self {
+        Splash {}
+    }
+    fn handle_key_event(&mut self, app: &mut App, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Char('q') => app.exit(),
+            KeyCode::Char('l') => {
+                app.current_frame = CurrentFrame::List;
+                app.note_list.is_active = true;
+
+            },
+            KeyCode::Char('n') => {
+                app.current_frame = CurrentFrame::Note;
+                app.note.is_active = true;
+                app.note = Note::create_note();
+                app.note_list.notes.push(app.note.clone());
+            }
+            _ => {}
+        };
+    }
+    fn get_type(self) -> String {
+        "splash".to_string()
+    }
 }
-impl<T> fmt::Display for CurrentFrame<T>
-where
-    T: ThisFrame + Debug + Display + Clone,
-{
+
+#[derive(Debug, Clone)]
+pub enum CurrentFrame {
+    Note,
+    Splash,
+    List,
+}
+impl fmt::Display for CurrentFrame {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
     }
 }
 
-// impl<T> ThisFrame for CurrentFrame<T>
-// where
-//     T: ThisFrame + Display,
-// {
-//     type FrameType = T;
-//     fn get_instructions(&self) -> Title {
-//         match self {
-//             CurrentFrame::Note(note) => note.get_instructions(),
-//             CurrentFrame::Splash(splash) => splash.get_instructions(),
-//             CurrentFrame::List(notes)
-//         }
-//     }
-
-//     fn new(&self) -> Self {
-//         match self {
-//             CurrentFrame::Note(note) => CurrentFrame::Note(note.new()),
-//             CurrentFrame::Splash(splash) => CurrentFrame::Splash(splash.new())
-//         }
-//     }
-//     fn handle_key_event(&mut self,app: &mut App<impl ThisFrame + Display>, key_event: KeyEvent) {
-//         match self {
-//             CurrentFrame::Note(note) => note.handle_key_event(app, key_event),
-//             CurrentFrame::Splash(splash) => splash.handle_key_event(app, key_event)
-
-//         }
-
-//     }
-
-//     fn get_type(self) -> String {
-//         match self {
-//             CurrentFrame::Note(_) => "Note".to_owned(),
-//             CurrentFrame::Splash(_) => "Splash".to_owned()
-//         }
-//     }
-// }
-
 #[derive(Debug)]
-pub struct App<T>
-where
-    T: ThisFrame + Display + Clone,
-{
-    pub current_frame: CurrentFrame<T>,
+pub struct App {
+    pub current_frame: CurrentFrame,
+    pub note: Note,
+    pub note_list: MyList,
     pub input_mode: bool,
     pub cursor_row: usize,
     pub cursor_column: usize,
     pub exit: bool,
 }
 
-impl<T> App<T>
-where
-    T: ThisFrame + Display + Clone,
-{
+impl App {
     pub fn run(&mut self, terminal: &mut Tui) -> io::Result<()> {
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame)).unwrap();
@@ -106,7 +108,16 @@ where
     }
 
     fn render_frame(&self, frame: &mut Frame) {
-        frame.render_widget(self, frame.area());
+        let layout = Layout::horizontal(Constraint::from_percentages([30,70]));
+        let [list_area,note_area] = layout.areas(frame.area());
+
+        let mut index = self.note_list.index;
+        frame.render_stateful_widget(&self.note_list,list_area, &mut index);
+        if self.note_list.is_active {
+            frame.render_widget(&self.note_list.notes.get(self.note_list.index).unwrap().to_owned(), note_area)
+        } else {
+            frame.render_widget(&self.note,note_area);
+        }
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
@@ -121,53 +132,37 @@ where
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         match self.current_frame {
-            CurrentFrame::Note(note) => ThisFrame::handle_key_event(&mut note, self, key_event),
-            CurrentFrame::Splash(splash) => ThisFrame::handle_key_event(&mut splash,self, key_event),
-            CurrentFrame::List(list) => ThisFrame::handle_key_event(&mut list, self, key_event),
+            CurrentFrame::Note => &self
+                .note
+                .clone()
+                .handle_key_event(self, key_event),
+            CurrentFrame::Splash => &ThisFrame::handle_key_event(&mut Splash {}, self, key_event),
+            CurrentFrame::List => &self.note_list.clone().handle_key_event(self, key_event),
         };
     }
 
-    fn exit(&mut self) {
+    pub fn exit(&mut self) {
         self.exit = true;
     }
 }
 
-impl<T> Widget for &App<T>
-where
-    T: ThisFrame + Display + Clone,
-{
+impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer)
     where
         Self: Sized,
     {
-        let title = Title::from(" Noter App".bold());
-        // let instructions = Title::from(Line::from(vec![
-        //     " Create New ".into(),
-        //     "<Left>".blue().bold(),
-        //     " Edit Existing ".into(),
-        //     "<Right>".blue().bold(),
-        //     " Quit ".into(),
-        //     "<q>".blue().bold(),
-        // ]));
-        let instructions = self.get_instructions();
+        let title = Title::from(" Noter App".bold().green());
 
-        let block = Block::bordered()
-            .title(title.alignment(Alignment::Center))
-            .title(
-                instructions
-                    .alignment(Alignment::Center)
-                    .position(Position::Bottom),
-            )
-            .border_set(border::THICK);
+        let note_ref = &self.note;
+        let note_instruction = note_ref.get_instructions();
+        let note_list_ref = &self.note_list;
+        let note_list_instruction = note_list_ref.get_instructions();
 
-        let text = Text::from(vec![Line::from(vec![
-            "Value ".into(),
-            " Current Text ".to_string().red(),
-        ])]);
+        let instructions = match self.current_frame {
+            CurrentFrame::Note => note_instruction,
+            CurrentFrame::Splash => Splash::get_instructions(&Splash {}),
+            CurrentFrame::List => note_list_instruction,
+        };
 
-        Paragraph::new(text)
-            .centered()
-            .block(block)
-            .render(area, buf);
     }
 }
