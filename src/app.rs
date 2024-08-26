@@ -1,29 +1,13 @@
 use std::{
-    borrow::Borrow, cell::RefCell, default, fmt::{self, Debug, Display}, io::{self, Result}, path::PathBuf, rc::Rc, sync::{Arc, Mutex}
+    borrow::Borrow, cell::RefCell, fmt::{self, Display}, io::{self, Result}, rc::Rc
 };
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-use layout::Offset;
-use ratatui::{
-    prelude::*,
-    widgets::{
-        self,
-        block::{Position, Title},
-        Block, List, ListState, Paragraph,
-    },
-};
-use style::Styled;
-use symbols::border;
-use text::ToText;
+use crossterm::{cursor::SetCursorStyle, event::{self, Event, KeyCode, KeyEvent, KeyEventKind}};
+use ratatui::{prelude::*, widgets::block::Title};
 
 use crate::{list::MyList, note::Note, traits::ThisFrame, tui::Tui};
 
 pub type RcRc<T> = Rc<RefCell<T>>;
-pub type ArcEx<T> = Arc<Mutex<T>>;
-
-pub fn arc_ex<T>(t: T) -> ArcEx<T> {
-    Arc::new(Mutex::new(t))
-}
 pub fn rc_rc<T>(t: T) -> RcRc<T> {
     Rc::new(RefCell::new(t))
 }
@@ -33,7 +17,7 @@ pub enum InputMode {
     #[default]
     Normal,
     Insert,
-    EditTitle
+    EditTitle,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -59,13 +43,11 @@ impl ThisFrame for Splash {
             KeyCode::Char('l') => {
                 app.current_frame = CurrentFrame::List;
                 app.note_list.is_active = true;
-
-            },
+            }
             KeyCode::Char('n') => {
                 app.current_frame = CurrentFrame::Note;
                 app.note.is_active = true;
                 app.note = Note::create_note();
-                app.note_list.notes.push(app.note.clone());
             }
             _ => {}
         };
@@ -108,15 +90,32 @@ impl App {
     }
 
     fn render_frame(&self, frame: &mut Frame) {
-        let layout = Layout::horizontal(Constraint::from_percentages([30,70]));
-        let [list_area,note_area] = layout.areas(frame.area());
+        let layout = Layout::horizontal(Constraint::from_percentages([30, 70]));
+        let [list_area, note_area] = layout.areas(frame.area());
 
-        let mut index = self.note_list.index;
-        frame.render_stateful_widget(&self.note_list,list_area, &mut index);
+
+        let index = self.note_list.index;
+        frame.render_stateful_widget(
+            &self.note_list.clone(),
+            list_area,
+            &mut (index, self.note_list.notes.clone()),
+        );
         if self.note_list.is_active {
-            frame.render_widget(&self.note_list.notes.get(self.note_list.index).unwrap().to_owned(), note_area)
+            frame.render_widget(
+                &self
+                    .note_list
+                    .notes
+                    .get(self.note_list.index)
+                    .unwrap()
+                    .to_owned(),
+                note_area,
+            )
         } else {
-            frame.render_widget(&self.note,note_area);
+            frame.render_widget(&self.note, note_area);
+            frame.set_cursor_position(layout::Position::new(
+                self.cursor_column as u16 + note_area.x + 1,
+                self.cursor_row as u16 + 1,
+            ))
         }
     }
 
@@ -132,10 +131,7 @@ impl App {
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         match self.current_frame {
-            CurrentFrame::Note => &self
-                .note
-                .clone()
-                .handle_key_event(self, key_event),
+            CurrentFrame::Note => &self.note.clone().handle_key_event(self, key_event),
             CurrentFrame::Splash => &ThisFrame::handle_key_event(&mut Splash {}, self, key_event),
             CurrentFrame::List => &self.note_list.clone().handle_key_event(self, key_event),
         };
@@ -151,18 +147,17 @@ impl Widget for &App {
     where
         Self: Sized,
     {
-        let title = Title::from(" Noter App".bold().green());
+        let _title = Title::from(" Noter App".bold().green());
 
         let note_ref = &self.note;
         let note_instruction = note_ref.get_instructions();
         let note_list_ref = &self.note_list;
         let note_list_instruction = note_list_ref.get_instructions();
 
-        let instructions = match self.current_frame {
+        let _instructions = match self.current_frame {
             CurrentFrame::Note => note_instruction,
             CurrentFrame::Splash => Splash::get_instructions(&Splash {}),
             CurrentFrame::List => note_list_instruction,
         };
-
     }
 }

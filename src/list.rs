@@ -1,19 +1,17 @@
+use crossterm::cursor::SetCursorStyle;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::prelude::*;
 use ratatui::widgets::block::Position;
-use ratatui::widgets::canvas::Line;
-use ratatui::widgets::{Block, Borders, List, ListState, Paragraph};
+use ratatui::widgets::{Block, Paragraph};
 use style::Styled;
 use std::fmt::Display;
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
 
 use ratatui::widgets::block::Title;
 
-use crate::app::{rc_rc, App, CurrentFrame};
-use crate::file_reader::{get_notes, parse_file, read_file};
+use crate::app::{App, CurrentFrame};
+use crate::file_reader::get_notes;
 use crate::{note::Note, traits::ThisFrame};
 
 #[derive(Debug, Default, Clone)]
@@ -110,7 +108,7 @@ impl Widget for &MyList {
 }
 
 impl StatefulWidget for &MyList {
-    type State = usize;
+    type State = (usize, Vec<Note>);
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let title_text = if self.is_active {
             " Note List".green().bold()
@@ -127,10 +125,11 @@ impl StatefulWidget for &MyList {
             )
             .border_set(symbols::border::ROUNDED);
         if self.is_active {
-            block = block.set_style(Color::Green);
+            block = block.set_style(Color::White);
+        } else {
+            block = block.set_style(Color::Green)
         }
-        let list: Vec<String> = self
-            .notes
+        let list: Vec<String> = state.1
             .iter()
             .map(|note| note.title.to_string())
             .collect();
@@ -138,7 +137,7 @@ impl StatefulWidget for &MyList {
         let text: Vec<text::Line> = list
             .iter()
             .map(|title| {
-                let colour = if *state  == count {
+                let colour = if state.0  == count {
                     Color::Blue
                 } else {
                     Color::Green

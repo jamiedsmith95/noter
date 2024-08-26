@@ -1,11 +1,11 @@
-use std::{cell::RefCell, fmt::Display, fs, path::Path, rc::Rc};
+use std::{cell::RefCell, fmt::Display, fs, rc::Rc, str::Lines};
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Styled, Stylize},
     symbols::border,
-    text::Line,
+    text::{Line, Text},
     widgets::{
         block::{Position, Title},
         Block, Paragraph, Widget,
@@ -86,7 +86,8 @@ impl ThisFrame for Note {
         match (key_event.code, self.mode.clone().borrow().to_owned()) {
             (KeyCode::Char('q'), InputMode::Normal) => app.exit = true,
             (KeyCode::Char('i'), InputMode::Normal) => {
-                app.note.mode = Rc::new(RefCell::new(InputMode::Insert))
+                app.note.mode = Rc::new(RefCell::new(InputMode::Insert));
+
             }
             (KeyCode::Char('s'), InputMode::Normal) => {
                 write_file(&mut self.clone());
@@ -114,7 +115,8 @@ impl ThisFrame for Note {
             }
             (KeyCode::Enter, InputMode::EditTitle) => {
                 if self.old_title.is_none() || self.old_title.as_mut().unwrap().is_empty() {
-                    write_file(&mut app.note)
+                    write_file(&mut app.note);
+                    app.note_list.notes.push(app.note.clone());
                 } else {
                     let mut path = app.note_list.path.clone();
                     path.push(app.note.old_title.as_ref().unwrap().to_owned() + ".md");
@@ -136,13 +138,24 @@ impl ThisFrame for Note {
                     app.cursor_column += 1;
                 }
             }
+            (KeyCode::Up, InputMode::Normal | InputMode::Insert) => {
+                if app.cursor_row > 0 {
+                    app.cursor_row -= 1;
+                    app.cursor_column = 0;
+                }
+            }
+            (KeyCode::Down, InputMode::Normal | InputMode::Insert) => {
+                if app.cursor_row < Text::raw(app.note.text.clone()).lines.len() {
+                    app.cursor_row += 1;
+                }
+            }
             (KeyCode::Left, InputMode::Normal | InputMode::Insert) => {
                 if app.cursor_column > 0 {
                     app.cursor_column -= 1;
                 }
             }
             (KeyCode::Right, InputMode::Normal | InputMode::Insert) => {
-                if app.cursor_column < self.text.len() {
+                if app.cursor_column < Text::raw(self.text.clone()).lines.get(app.cursor_row).unwrap().to_string().len() {
                     app.cursor_column += 1;
                 }
             }
@@ -154,16 +167,26 @@ impl ThisFrame for Note {
             (KeyCode::Backspace, InputMode::Insert) => {
                 if app.cursor_column == 0 {
                 } else {
+                    let mut lines = Text::raw(app.note.text.clone()).lines;
+                    let mut line = lines.get(app.cursor_row).unwrap().to_string();
                     app.note.edited = true;
-                    let (first, second) = self.text.as_mut_str().split_at(app.cursor_column);
+                    let (first, second) = line.split_at(app.cursor_column);
                     app.cursor_column -= 1;
-                    app.note.text = first.split_at(app.cursor_column).0.to_string() + second;
+                    line = first.split_at(app.cursor_column).0.to_string() + second;
+                    lines[app.cursor_row] = Line::raw(line);
+                    let text: Text = lines.into();
+                    app.note.text = text.to_string();
                 }
             }
             (KeyCode::Char(c), InputMode::Insert) => {
+                let mut lines = Text::raw(app.note.text.clone()).lines;
+                let mut line = lines.get(app.cursor_row).unwrap().to_string();
                 app.note.edited = true;
-                let (first, second) = self.text.as_mut_str().split_at(app.cursor_column);
-                app.note.text = first.to_string() + &c.to_string() + second;
+                let (first, second) = line.split_at(app.cursor_column);
+                line = first.to_string().to_owned() + &c.to_string() + second;
+                lines[app.cursor_row] = Line::raw(line);
+                let text: Text = lines.into();
+                app.note.text = text.to_string();
                 app.cursor_column += 1;
             }
             _ => {}
@@ -200,9 +223,13 @@ impl Widget for &Note {
             .border_set(border::ROUNDED)
             .bg(Color::Black);
         if self.is_active {
-            block = block.set_style(Color::Green);
+            block = block.set_style(Color::White);
+        } else {
+            block = block.set_style(Color::Green)
         }
-        Paragraph::new(self.text.clone())
+        let text: Text = Text::raw(self.text.clone());
+        let lines = text.lines;
+        Paragraph::new(lines)
             .left_aligned()
             .block(block)
             .render(area, buf);

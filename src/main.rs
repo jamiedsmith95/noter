@@ -1,4 +1,5 @@
 use app::{App, CurrentFrame};
+use crossterm::cursor::SetCursorStyle;
 use file_reader::{list_files, parse_file, read_file};
 use list::MyList;
 use note::Note;

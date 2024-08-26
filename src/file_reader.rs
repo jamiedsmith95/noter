@@ -1,21 +1,11 @@
-use std::any::Any;
 use std::cell::RefCell;
-use std::env;
-use std::fmt::Debug;
-use std::fmt::Result;
-use std::fmt::Write;
 use std::fs;
-use std::fs::FileType;
 use std::path::Path;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Arc;
-use std::sync::Mutex;
 
 use regex::Regex;
 
-use crate::app::arc_ex;
-use crate::app::ArcEx;
 use crate::app::InputMode;
 use crate::note::Link;
 use crate::note::Note;
