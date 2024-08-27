@@ -1,16 +1,20 @@
+use core::borrow;
+use std::borrow::Borrow;
 use std::{
-    borrow::Borrow, cell::RefCell, fmt::{self, Display}, io::{self, Result}, rc::Rc
+    fmt::{self, Display},
+    io::{self, Result},
 };
 
-use crossterm::{cursor::SetCursorStyle, event::{self, Event, KeyCode, KeyEvent, KeyEventKind}};
+use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::block::Title};
 
-use crate::{list::MyList, note::Note, traits::ThisFrame, tui::Tui};
-
-pub type RcRc<T> = Rc<RefCell<T>>;
-pub fn rc_rc<T>(t: T) -> RcRc<T> {
-    Rc::new(RefCell::new(t))
-}
+use crate::{
+    list::MyList,
+    note::{self, Note},
+    traits::ThisFrame,
+    tui::Tui,
+    utils::RcRc,
+};
 
 #[derive(Debug, Clone, Default)]
 pub enum InputMode {
@@ -20,47 +24,9 @@ pub enum InputMode {
     EditTitle,
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct Splash;
-
-impl ThisFrame for Splash {
-    fn get_instructions(&self) -> Title {
-        Title::from(Line::from(vec![
-            " List Notes ".into(),
-            "<l>".blue().bold(),
-            " New Note ".into(),
-            "<n>".blue().bold(),
-            " Quit ".into(),
-            "<q>".red().bold(),
-        ]))
-    }
-    fn new() -> Self {
-        Splash {}
-    }
-    fn handle_key_event(&mut self, app: &mut App, key_event: KeyEvent) {
-        match key_event.code {
-            KeyCode::Char('q') => app.exit(),
-            KeyCode::Char('l') => {
-                app.current_frame = CurrentFrame::List;
-                app.note_list.is_active = true;
-            }
-            KeyCode::Char('n') => {
-                app.current_frame = CurrentFrame::Note;
-                app.note.is_active = true;
-                app.note = Note::create_note();
-            }
-            _ => {}
-        };
-    }
-    fn get_type(self) -> String {
-        "splash".to_string()
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum CurrentFrame {
     Note,
-    Splash,
     List,
 }
 impl fmt::Display for CurrentFrame {
@@ -72,7 +38,7 @@ impl fmt::Display for CurrentFrame {
 #[derive(Debug)]
 pub struct App {
     pub current_frame: CurrentFrame,
-    pub note: Note,
+    pub note: RcRc<Note>,
     pub note_list: MyList,
     pub input_mode: bool,
     pub cursor_row: usize,
@@ -90,9 +56,9 @@ impl App {
     }
 
     fn render_frame(&self, frame: &mut Frame) {
-        let layout = Layout::horizontal(Constraint::from_percentages([30, 70]));
+        let layout = Layout::horizontal(Constraint::from_percentages([15, 85]));
         let [list_area, note_area] = layout.areas(frame.area());
-
+        let note = self.note.borrow_mut().clone();
 
         let index = self.note_list.index;
         frame.render_stateful_widget(
@@ -107,15 +73,25 @@ impl App {
                     .notes
                     .get(self.note_list.index)
                     .unwrap()
-                    .to_owned(),
+                    .borrow_mut()
+                    .clone(),
                 note_area,
             )
         } else {
-            frame.render_widget(&self.note, note_area);
-            frame.set_cursor_position(layout::Position::new(
-                self.cursor_column as u16 + note_area.x + 1,
-                self.cursor_row as u16 + 1,
-            ))
+            frame.render_widget(&self.note.borrow_mut().clone(), note_area);
+
+            match self.note.borrow_mut().clone().mode {
+                InputMode::EditTitle => {
+                    frame.set_cursor_position(layout::Position::new(
+                        self.cursor_column as u16 + note_area.x + (note_area.width as f64 / 2.).ceil() as u16 - (note.title.len() as f64/2.).ceil() as u16,
+                        self.cursor_row as u16,
+                    ));
+                }
+                _ => frame.set_cursor_position(layout::Position::new(
+                    self.cursor_column as u16 + note_area.x + 1,
+                    self.cursor_row as u16 + 1,
+                )),
+            }
         }
     }
 
@@ -131,9 +107,14 @@ impl App {
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         match self.current_frame {
-            CurrentFrame::Note => &self.note.clone().handle_key_event(self, key_event),
-            CurrentFrame::Splash => &ThisFrame::handle_key_event(&mut Splash {}, self, key_event),
-            CurrentFrame::List => &self.note_list.clone().handle_key_event(self, key_event),
+            CurrentFrame::Note => {
+                let mut note = self.note.borrow_mut().clone();
+                note.handle_key_event(self, key_event);
+            }
+            CurrentFrame::List => {
+                let mut list = self.note_list.clone();
+                list.handle_key_event(self, key_event);
+            }
         };
     }
 
@@ -149,14 +130,13 @@ impl Widget for &App {
     {
         let _title = Title::from(" Noter App".bold().green());
 
-        let note_ref = &self.note;
+        let note_ref = &self.note.borrow_mut().clone();
         let note_instruction = note_ref.get_instructions();
         let note_list_ref = &self.note_list;
         let note_list_instruction = note_list_ref.get_instructions();
 
         let _instructions = match self.current_frame {
             CurrentFrame::Note => note_instruction,
-            CurrentFrame::Splash => Splash::get_instructions(&Splash {}),
             CurrentFrame::List => note_list_instruction,
         };
     }

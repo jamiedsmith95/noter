@@ -1,22 +1,25 @@
-use std::{cell::RefCell, fmt::Display, fs, rc::Rc, str::Lines};
+use std::{cell::RefCell, fmt::Display, fs, path::Path, rc::Rc, str::Lines};
 
+use crate::{
+    app::{App, CurrentFrame, InputMode},
+    file_reader::write_file,
+    traits::ThisFrame,
+};
+use crate::{
+    file_reader::parse_file,
+    utils::{rc_rc, RcRc},
+};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Styled, Stylize},
     symbols::border,
-    text::{Line, Text},
+    text::{Line, Span, Text, ToSpan, ToText},
     widgets::{
-        block::{Position, Title},
-        Block, Paragraph, Widget,
+        block::{Position, Title}, Block, BorderType, Borders, Paragraph, Widget
     },
 };
-
-use crate::{
-    app::{rc_rc, App, CurrentFrame, InputMode, RcRc},
-    file_reader::write_file,
-    traits::ThisFrame,
-};
+use regex::Regex;
 
 #[derive(Debug, Clone)]
 pub struct Tag(pub String);
@@ -30,7 +33,7 @@ pub struct Note {
     pub text: String,
     pub links: Option<Vec<Link>>,
     pub tags: Option<Vec<Tag>>,
-    pub mode: RcRc<InputMode>,
+    pub mode: InputMode,
     pub edited: bool,
     pub is_active: bool,
     pub old_title: Option<String>,
@@ -44,7 +47,7 @@ impl Display for Note {
 impl ThisFrame for Note {
     // get key bindings for this mode.
     fn get_instructions(&self) -> Title {
-        match self.mode.borrow().clone() {
+        match self.mode {
             InputMode::Normal => Title::from(Line::from(vec![
                 " Back ".into(),
                 "<esc>".blue().bold(),
@@ -69,11 +72,11 @@ impl ThisFrame for Note {
     }
     fn new() -> Note {
         Note {
-            title: "test title".to_string(),
-            text: "test text".to_string(),
+            title: "Enter Title".to_string(),
+            text: "Text Here".to_string(),
             links: None,
             tags: None,
-            mode: Rc::new(RefCell::new(InputMode::Normal)),
+            mode: InputMode::Normal,
             edited: false,
             is_active: true,
             old_title: None,
@@ -83,50 +86,55 @@ impl ThisFrame for Note {
         "Note".to_owned()
     }
     fn handle_key_event(&mut self, app: &mut App, key_event: KeyEvent) {
-        match (key_event.code, self.mode.clone().borrow().to_owned()) {
+        let mut note = app.note.borrow_mut();
+        match (key_event.code, &self.mode) {
             (KeyCode::Char('q'), InputMode::Normal) => app.exit = true,
             (KeyCode::Char('i'), InputMode::Normal) => {
-                app.note.mode = Rc::new(RefCell::new(InputMode::Insert));
-
+                note.mode = InputMode::Insert;
             }
             (KeyCode::Char('s'), InputMode::Normal) => {
-                write_file(&mut self.clone());
-                app.note.edited = false;
+                if note.edited {
+                    write_file(&mut note.clone());
+                    note.edited = false;
+                }
             }
             (KeyCode::Char('t'), InputMode::Normal) => {
-                app.note.mode = rc_rc(InputMode::EditTitle);
-                app.note.old_title = Some(self.title.clone());
+                note.mode = InputMode::EditTitle;
+                note.old_title = Some(self.title.clone());
                 app.cursor_column = 0;
             }
             (KeyCode::Backspace, InputMode::EditTitle) => {
                 if app.cursor_column == 0 {
                 } else {
-                    app.note.edited = true;
-                    let (first, second) = app.note.title.as_mut_str().split_at(app.cursor_column);
+                    note.edited = true;
+                    let (first, second) = note.title.as_mut_str().split_at(app.cursor_column);
                     app.cursor_column -= 1;
-                    app.note.title = first.split_at(app.cursor_column).0.to_string() + second;
+                    note.title = first.split_at(app.cursor_column).0.to_string() + second;
                 }
             }
             (KeyCode::Char(c), InputMode::EditTitle) => {
-                app.note.edited = true;
-                let (first, second) = app.note.title.as_mut_str().split_at(app.cursor_column);
-                app.note.title = first.to_string() + &c.to_string() + second;
+                note.edited = true;
+                let (first, second) = note.title.as_mut_str().split_at(app.cursor_column);
+                note.title = first.to_string() + &c.to_string() + second;
                 app.cursor_column += 1;
             }
             (KeyCode::Enter, InputMode::EditTitle) => {
+                note.mode = InputMode::Normal;
+                app.cursor_column = 0;
+                note.edited = false;
+                note.is_active = false;
                 if self.old_title.is_none() || self.old_title.as_mut().unwrap().is_empty() {
-                    write_file(&mut app.note);
-                    app.note_list.notes.push(app.note.clone());
+                    write_file(&mut note);
+                    app.note_list
+                        .notes
+                        .push(parse_file(note.text.clone(), Path::new(&note.title)));
                 } else {
                     let mut path = app.note_list.path.clone();
-                    path.push(app.note.old_title.as_ref().unwrap().to_owned() + ".md");
+                    path.push(note.old_title.as_ref().unwrap().to_owned() + ".md");
                     fs::remove_file(path).unwrap();
-                    write_file(&mut app.note);
+                    write_file(&mut note);
                 }
-
-                app.note.mode = rc_rc(InputMode::Normal);
-                app.cursor_column = 0;
-                app.note.edited = false;
+                note.is_active = true;
             }
             (KeyCode::Left, InputMode::EditTitle) => {
                 if app.cursor_column > 0 {
@@ -145,7 +153,7 @@ impl ThisFrame for Note {
                 }
             }
             (KeyCode::Down, InputMode::Normal | InputMode::Insert) => {
-                if app.cursor_row < Text::raw(app.note.text.clone()).lines.len() {
+                if app.cursor_row < Text::raw(&note.text).lines.len() - 1 {
                     app.cursor_row += 1;
                 }
             }
@@ -155,38 +163,46 @@ impl ThisFrame for Note {
                 }
             }
             (KeyCode::Right, InputMode::Normal | InputMode::Insert) => {
-                if app.cursor_column < Text::raw(self.text.clone()).lines.get(app.cursor_row).unwrap().to_string().len() {
+                if app.cursor_column
+                    < Text::raw(self.text.clone())
+                        .lines
+                        .get(app.cursor_row)
+                        .unwrap()
+                        .to_string()
+                        .len()
+                {
                     app.cursor_column += 1;
                 }
             }
             (KeyCode::Esc, InputMode::Normal) => {
-                app.note.is_active = false;
-                app.current_frame = CurrentFrame::Splash;
+                note.is_active = false;
+                app.current_frame = CurrentFrame::List;
+                app.note_list.is_active = true;
             }
-            (KeyCode::Esc, InputMode::Insert) => app.note.mode = rc_rc(InputMode::Normal),
+            (KeyCode::Esc, InputMode::Insert) => note.mode = InputMode::Normal,
             (KeyCode::Backspace, InputMode::Insert) => {
                 if app.cursor_column == 0 {
                 } else {
-                    let mut lines = Text::raw(app.note.text.clone()).lines;
+                    note.edited = true;
+                    let mut lines = Text::raw(&note.text).lines;
                     let mut line = lines.get(app.cursor_row).unwrap().to_string();
-                    app.note.edited = true;
                     let (first, second) = line.split_at(app.cursor_column);
                     app.cursor_column -= 1;
                     line = first.split_at(app.cursor_column).0.to_string() + second;
                     lines[app.cursor_row] = Line::raw(line);
                     let text: Text = lines.into();
-                    app.note.text = text.to_string();
+                    note.text = text.to_string();
                 }
             }
             (KeyCode::Char(c), InputMode::Insert) => {
-                let mut lines = Text::raw(app.note.text.clone()).lines;
+                note.edited = true;
+                let mut lines = Text::raw(&note.text).lines;
                 let mut line = lines.get(app.cursor_row).unwrap().to_string();
-                app.note.edited = true;
                 let (first, second) = line.split_at(app.cursor_column);
                 line = first.to_string().to_owned() + &c.to_string() + second;
                 lines[app.cursor_row] = Line::raw(line);
                 let text: Text = lines.into();
-                app.note.text = text.to_string();
+                note.text = text.to_string();
                 app.cursor_column += 1;
             }
             _ => {}
@@ -213,6 +229,8 @@ impl Widget for &Note {
         };
 
         let title: Title = Title::from(title_text);
+        let mut my_border = border::ROUNDED;
+        my_border.horizontal_top = border::EMPTY.top_left;
         let mut block = Block::bordered()
             .title(title.alignment(Alignment::Center))
             .title(
@@ -220,16 +238,31 @@ impl Widget for &Note {
                     .alignment(Alignment::Center)
                     .position(Position::Bottom),
             )
-            .border_set(border::ROUNDED)
-            .bg(Color::Black);
+            .border_set(my_border)
+            .style(Color::Black);
         if self.is_active {
             block = block.set_style(Color::White);
         } else {
             block = block.set_style(Color::Green)
         }
-        let text: Text = Text::raw(self.text.clone());
-        let lines = text.lines;
-        Paragraph::new(lines)
+
+        let link_regex = Regex::new(r"(?:\(.+?\))").unwrap();
+        let style_text: Vec<Span> = {
+            self.text
+                .split_inclusive(r" ")
+                .map(|token| {
+                    if token.starts_with("#") {
+                        token.magenta()
+                    } else {
+                        token.green()
+                    }
+                })
+                .collect()
+        };
+        let line_text = Line::from(style_text);
+        let text = Text::from(line_text);
+
+        Paragraph::new(text)
             .left_aligned()
             .block(block)
             .render(area, buf);

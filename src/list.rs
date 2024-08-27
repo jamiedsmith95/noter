@@ -1,22 +1,25 @@
-use crossterm::cursor::SetCursorStyle;
+use config::Config;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::prelude::*;
 use ratatui::widgets::block::Position;
 use ratatui::widgets::{Block, Paragraph};
 use style::Styled;
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::str::FromStr;
 
 use ratatui::widgets::block::Title;
 
 use crate::app::{App, CurrentFrame};
 use crate::file_reader::get_notes;
+use crate::utils::{rc_rc, RcRc};
 use crate::{note::Note, traits::ThisFrame};
 
 #[derive(Debug, Default, Clone)]
 pub struct MyList {
-    pub notes: Vec<Note>,
+    pub notes: Vec<RcRc<Note>>,
     pub index: usize,
     pub path: PathBuf,
     pub is_active: bool,
@@ -30,12 +33,14 @@ impl Display for MyList {
 
 impl ThisFrame for MyList {
     fn new() -> Self {
-        let found_notes = get_notes("/mnt/g/My Drive/JamiesVault");
+        let config = Config::builder().add_source(config::File::with_name("/home/jsmith49/.config/noter/config")).build().unwrap();
+        let path = config.try_deserialize::<HashMap<String,String>>().unwrap().get("path").unwrap().to_owned();
+        let found_notes = get_notes(path.as_str());
         MyList {
             notes: found_notes,
             index: 0,
-            path: PathBuf::from_str("/mnt/g/My Drive/JamiesVault/").unwrap(),
-            is_active: false,
+            path: PathBuf::from_str(path.as_str()).unwrap(),
+            is_active: true,
         }
     }
     fn get_instructions(&self) -> ratatui::widgets::block::Title {
@@ -48,8 +53,8 @@ impl ThisFrame for MyList {
             "<DOWN".bold().blue(),
             " Select Note ".into(),
             "<ENTER>".bold().blue(),
-            " Back ".into(),
-            "<esc>".bold().blue(),
+            " New Note ".into(),
+            "<n>".bold().blue()
         ]))
     }
 
@@ -60,6 +65,13 @@ impl ThisFrame for MyList {
     fn handle_key_event(&mut self, app: &mut App, key_event: KeyEvent) {
         match key_event.code {
             KeyCode::Char('q') => app.exit(),
+            KeyCode::Char('n') => {
+                app.note_list.is_active = false;
+                app.note = rc_rc(Note::create_note());
+                let mut note = app.note.borrow_mut();
+                note.is_active = true;
+                app.current_frame = CurrentFrame::Note;
+            }
             KeyCode::Up => {
                 if app.note_list.index == 0 {
                     app.note_list.index = self.notes.len() - 1;
@@ -77,12 +89,8 @@ impl ThisFrame for MyList {
             KeyCode::Enter => {
                 app.note = app.note_list.notes.get(app.note_list.index).unwrap().to_owned();
                 app.note_list.is_active = false;
-                app.note.is_active = true;
+                app.note.borrow_mut().is_active = true;
                 app.current_frame = CurrentFrame::Note;
-            }
-            KeyCode::Esc => {
-                app.note_list.is_active = false;
-                app.current_frame = CurrentFrame::Splash;
             }
             _ => {}
         }
@@ -108,7 +116,7 @@ impl Widget for &MyList {
 }
 
 impl StatefulWidget for &MyList {
-    type State = (usize, Vec<Note>);
+    type State = (usize, Vec<RcRc<Note>>);
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let title_text = if self.is_active {
             " Note List".green().bold()
@@ -131,7 +139,7 @@ impl StatefulWidget for &MyList {
         }
         let list: Vec<String> = state.1
             .iter()
-            .map(|note| note.title.to_string())
+            .map(|note| note.borrow_mut().title.to_string())
             .collect();
         let mut count = 0;
         let text: Vec<text::Line> = list

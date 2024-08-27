@@ -3,6 +3,7 @@ use crossterm::cursor::SetCursorStyle;
 use file_reader::{list_files, parse_file, read_file};
 use list::MyList;
 use note::Note;
+use utils::rc_rc;
 use std::{
     cell::RefCell,
     io::{self, Result},
@@ -16,12 +17,14 @@ mod list;
 mod note;
 mod traits;
 mod tui;
+mod utils;
+
 
 fn main() -> io::Result<()> {
     let mut terminal = tui::init().unwrap();
     let mut app = App {
-        current_frame: CurrentFrame::Splash,
-        note: Note::new(),
+        current_frame: CurrentFrame::List,
+        note: rc_rc(Note::new()),
         input_mode: false,
         cursor_row: 0,
         cursor_column: 0,
