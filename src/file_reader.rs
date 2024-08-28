@@ -5,6 +5,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use config::builder::DefaultState;
+use config::ConfigBuilder;
 use regex::Regex;
 
 use crate::app::InputMode;
@@ -82,8 +84,14 @@ pub fn parse_file(file_contents: String, path: &Path) -> RcRc<Note> {
 }
 
 pub fn write_file(note: &mut Note) {
-    let config = Config::builder().add_source(config::File::with_name("/home/jsmith49/.config/noter/config")).build().unwrap();
-    let path = config.try_deserialize::<HashMap<String,String>>().unwrap().get("path").unwrap().to_owned();
+    let home = std::env::home_dir().unwrap();
+    let path = home.to_str().unwrap().to_string() + "/.config/noter/config";
+    
+
+
+    let config_build = Config::builder().add_source(config::File::with_name(&path)).build().unwrap() ;
+
+    let path = config_build.try_deserialize::<HashMap<String,String>>().unwrap().get("path").unwrap().to_owned();
     let test_location = "/mnt/g/My Drive/JamiesVault/".to_string();
     let file_name = path + &note.title + ".md";
     fs::write(file_name, note.clone().text.into_bytes()).unwrap();

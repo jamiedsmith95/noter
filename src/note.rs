@@ -16,7 +16,8 @@ use ratatui::{
     symbols::border,
     text::{Line, Span, Text, ToSpan, ToText},
     widgets::{
-        block::{Position, Title}, Block, BorderType, Borders, Paragraph, Widget
+        block::{Position, Title},
+        Block, BorderType, Borders, Paragraph, Widget,
     },
 };
 use regex::Regex;
@@ -118,6 +119,16 @@ impl ThisFrame for Note {
                 note.title = first.to_string() + &c.to_string() + second;
                 app.cursor_column += 1;
             }
+            // (KeyCode::Enter, InputMode::Insert) => {
+            //     note.edited = true;
+            //     note.edited = true;
+            //     let (first, second) = note.text.split_at(app.cursor_column);
+            //     note.text = first.to_string().to_owned() + "\n".to_string().as_str() + second;
+            //     let text = Text::raw(&note.text);
+            //     note.text = text.to_string();
+            //     app.cursor_column = 0;
+            //     app.cursor_row += 1;
+            // }
             (KeyCode::Enter, InputMode::EditTitle) => {
                 note.mode = InputMode::Normal;
                 app.cursor_column = 0;
@@ -260,7 +271,7 @@ impl Widget for &Note {
                 .collect()
         };
         let line_text = Line::from(style_text);
-        let text = Text::from(line_text);
+        let text = Text::from(line_text) ;
 
         Paragraph::new(text)
             .left_aligned()
