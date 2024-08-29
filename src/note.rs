@@ -119,16 +119,33 @@ impl ThisFrame for Note {
                 note.title = first.to_string() + &c.to_string() + second;
                 app.cursor_column += 1;
             }
-            // (KeyCode::Enter, InputMode::Insert) => {
-            //     note.edited = true;
-            //     note.edited = true;
-            //     let (first, second) = note.text.split_at(app.cursor_column);
-            //     note.text = first.to_string().to_owned() + "\n".to_string().as_str() + second;
-            //     let text = Text::raw(&note.text);
-            //     note.text = text.to_string();
-            //     app.cursor_column = 0;
-            //     app.cursor_row += 1;
-            // }
+            (KeyCode::Enter, InputMode::Insert) => {
+                note.edited = true;
+                let mut start_lines = note
+                    .text
+                    .lines()
+                    .map(Line::raw)
+                    .collect::<Vec<ratatui::prelude::Line>>();
+                if start_lines.len() > 1 {
+                    let end_lines = start_lines.split_off(app.cursor_row + 1);
+                    let current_line = start_lines.pop().unwrap().to_string();
+
+                    let (first, second) = current_line.split_at(app.cursor_column);
+                    start_lines.push(Line::raw(first));
+                    start_lines.push(Line::raw(second));
+                    for line in end_lines {
+                        start_lines.push(line);
+                    }
+                    note.text = Text::from(start_lines).to_string();
+                } else {
+                    let line = &start_lines[0];
+                    let line = &line.to_string();
+                    let (first, second) = line.split_at(app.cursor_column);
+                    note.text = Text::from(vec![first.into(), second.into()]).to_string();
+                }
+                app.cursor_column = 0;
+                app.cursor_row += 1;
+            }
             (KeyCode::Enter, InputMode::EditTitle) => {
                 note.mode = InputMode::Normal;
                 app.cursor_column = 0;
@@ -192,7 +209,32 @@ impl ThisFrame for Note {
             }
             (KeyCode::Esc, InputMode::Insert) => note.mode = InputMode::Normal,
             (KeyCode::Backspace, InputMode::Insert) => {
+                let mut lines = Text::raw(&note.text).lines;
                 if app.cursor_column == 0 {
+                    if app.cursor_row == 0 || app.cursor_row == lines.len() {
+                        if app.cursor_row == lines.len() {
+                            app.cursor_row -=1;
+                            app.cursor_column = lines.last().unwrap().to_string().len();
+                        }
+                    } else {
+                        let start = lines.split_at(app.cursor_row);
+                        let mut last = start.1.split_first().unwrap();
+                        let mut prev = start.0.split_last().unwrap();
+                        let new_line = prev.0.to_string() + &last.0.to_string();
+                        let mut text: Text = Text::default();
+                        app.cursor_column = prev.0.to_string().len();
+
+                        for line in prev.1.iter() {
+                            text.push_line(line.to_owned());
+                        }
+                        text.push_line(new_line);
+                        for line in last.1.iter() {
+                            text.push_line(line.to_owned());
+                        }
+                        note.text = text.to_string();
+                        note.edited = true;
+                        app.cursor_row -= 1;
+                    }
                 } else {
                     note.edited = true;
                     let mut lines = Text::raw(&note.text).lines;
@@ -241,7 +283,8 @@ impl Widget for &Note {
 
         let title: Title = Title::from(title_text);
         let mut my_border = border::ROUNDED;
-        my_border.horizontal_top = border::EMPTY.top_left;
+        my_border.vertical_left = border::DOUBLE.vertical_left;
+        my_border.horizontal_bottom = border::DOUBLE.horizontal_bottom;
         let mut block = Block::bordered()
             .title(title.alignment(Alignment::Center))
             .title(
@@ -270,8 +313,10 @@ impl Widget for &Note {
                 })
                 .collect()
         };
-        let line_text = Line::from(style_text);
-        let text = Text::from(line_text) ;
+
+        let binding = self.text.clone();
+        let lines = binding.split("\n").map(Line::raw).collect::<Vec<Line>>();
+        let text = Text::from(lines);
 
         Paragraph::new(text)
             .left_aligned()
