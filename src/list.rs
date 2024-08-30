@@ -3,12 +3,12 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::prelude::*;
 use ratatui::widgets::block::Position;
 use ratatui::widgets::{Block, Paragraph};
-use style::Styled;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::str::FromStr;
+use style::Styled;
 
 use ratatui::widgets::block::Title;
 
@@ -33,8 +33,20 @@ impl Display for MyList {
 
 impl ThisFrame for MyList {
     fn new() -> Self {
-        let config = Config::builder().add_source(config::File::with_name("/home/jsmith49/.config/noter/config")).build().unwrap();
-        let path = config.try_deserialize::<HashMap<String,String>>().unwrap().get("path").unwrap().to_owned();
+        let home = std::env::home_dir().unwrap();
+        let path = home.to_str().unwrap().to_string() + "/.config/noter/config";
+
+        let config_build = Config::builder()
+            .add_source(config::File::with_name(&path))
+            .build()
+            .unwrap();
+
+        let path = config_build
+            .try_deserialize::<HashMap<String, String>>()
+            .unwrap()
+            .get("path")
+            .unwrap()
+            .to_owned();
         let found_notes = get_notes(path.as_str());
         MyList {
             notes: found_notes,
@@ -54,7 +66,7 @@ impl ThisFrame for MyList {
             " Select Note ".into(),
             "<ENTER>".bold().blue(),
             " New Note ".into(),
-            "<n>".bold().blue()
+            "<n>".bold().blue(),
         ]))
     }
 
@@ -87,7 +99,12 @@ impl ThisFrame for MyList {
                 }
             }
             KeyCode::Enter => {
-                app.note = app.note_list.notes.get(app.note_list.index).unwrap().to_owned();
+                app.note = app
+                    .note_list
+                    .notes
+                    .get(app.note_list.index)
+                    .unwrap()
+                    .to_owned();
                 app.note_list.is_active = false;
                 app.note.borrow_mut().is_active = true;
                 app.current_frame = CurrentFrame::Note;
@@ -137,7 +154,8 @@ impl StatefulWidget for &MyList {
         } else {
             block = block.set_style(Color::Green)
         }
-        let list: Vec<String> = state.1
+        let list: Vec<String> = state
+            .1
             .iter()
             .map(|note| note.borrow_mut().title.to_string())
             .collect();
@@ -145,7 +163,7 @@ impl StatefulWidget for &MyList {
         let text: Vec<text::Line> = list
             .iter()
             .map(|title| {
-                let colour = if state.0  == count {
+                let colour = if state.0 == count {
                     Color::Blue
                 } else {
                     Color::Green

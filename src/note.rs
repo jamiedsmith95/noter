@@ -126,22 +126,37 @@ impl ThisFrame for Note {
                     .lines()
                     .map(Line::raw)
                     .collect::<Vec<ratatui::prelude::Line>>();
-                if start_lines.len() > 1 {
-                    let end_lines = start_lines.split_off(app.cursor_row + 1);
-                    let current_line = start_lines.pop().unwrap().to_string();
+                match start_lines.len() {
+                    2.. => {
+                        let end_lines = start_lines.split_off(app.cursor_row + 1);
+                        let current_line = start_lines.pop().unwrap().to_string();
+                        // let current_line = end_lines.first().unwrap().to_string();
+                        if app.cursor_column == 0 {
+                            start_lines.push(Line::raw(""));
+                            start_lines.push(Line::raw(current_line));
+                            end_lines
+                                .iter()
+                                .for_each(|line| start_lines.push(line.to_owned()));
+                        } else {
+                            let (first, second) = current_line.split_at(app.cursor_column);
+                            start_lines.push(Line::raw(first));
+                            start_lines.push(Line::raw(second));
+                            end_lines
+                                .iter()
+                                .for_each(|line| start_lines.push(line.to_owned()));
+                        }
 
-                    let (first, second) = current_line.split_at(app.cursor_column);
-                    start_lines.push(Line::raw(first));
-                    start_lines.push(Line::raw(second));
-                    for line in end_lines {
-                        start_lines.push(line);
+                        note.text = Text::from(start_lines).to_string();
                     }
-                    note.text = Text::from(start_lines).to_string();
-                } else {
-                    let line = &start_lines[0];
-                    let line = &line.to_string();
-                    let (first, second) = line.split_at(app.cursor_column);
-                    note.text = Text::from(vec![first.into(), second.into()]).to_string();
+                    1 => {
+                        let line = &start_lines[0];
+                        let line = &line.to_string();
+                        let (first, second) = line.split_at(app.cursor_column);
+                        note.text = Text::from(vec![first.into(), second.into()]).to_string();
+                    }
+                    0 => {
+                        note.text = "\n\r".to_string();
+                    }
                 }
                 app.cursor_column = 0;
                 app.cursor_row += 1;
@@ -209,17 +224,17 @@ impl ThisFrame for Note {
             }
             (KeyCode::Esc, InputMode::Insert) => note.mode = InputMode::Normal,
             (KeyCode::Backspace, InputMode::Insert) => {
-                let mut lines = Text::raw(&note.text).lines;
+                let lines = Text::raw(&note.text).lines;
                 if app.cursor_column == 0 {
                     if app.cursor_row == 0 || app.cursor_row == lines.len() {
                         if app.cursor_row == lines.len() {
-                            app.cursor_row -=1;
+                            app.cursor_row -= 1;
                             app.cursor_column = lines.last().unwrap().to_string().len();
                         }
                     } else {
                         let start = lines.split_at(app.cursor_row);
-                        let mut last = start.1.split_first().unwrap();
-                        let mut prev = start.0.split_last().unwrap();
+                        let last = start.1.split_first().unwrap();
+                        let prev = start.0.split_last().unwrap();
                         let new_line = prev.0.to_string() + &last.0.to_string();
                         let mut text: Text = Text::default();
                         app.cursor_column = prev.0.to_string().len();
@@ -315,8 +330,27 @@ impl Widget for &Note {
         };
 
         let binding = self.text.clone();
-        let lines = binding.split("\n").map(Line::raw).collect::<Vec<Line>>();
-        let text = Text::from(lines);
+        let lines: Vec<Line> = binding.split("\n").map(Line::raw).collect::<Vec<Line>>();
+        let mut text_vec: Vec<Line> = vec![] ;
+        for line in lines.clone() {
+            let mut new_line: Vec<Span> = vec![];
+            let vec_line = line.to_owned().to_string().split_inclusive(" ").to_owned().map(|token| token.to_string()).collect::<Vec<String>>();
+
+
+            for token in vec_line
+                {
+                    if token.starts_with("#") {
+                        let spn = token.clone().magenta();
+                        new_line.push(spn);
+                    } else {
+                        let spn = token.clone().green();
+                        new_line.push(spn);
+                    }
+            };
+            text_vec.push(Line::from(new_line));
+        }
+
+        let text = Text::from(text_vec);
 
         Paragraph::new(text)
             .left_aligned()
