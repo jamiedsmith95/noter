@@ -1,15 +1,10 @@
 use app::{App, CurrentFrame};
-use crossterm::cursor::SetCursorStyle;
-use file_reader::{list_files, parse_file, read_file};
 use list::MyList;
 use note::Note;
 use utils::rc_rc;
-use std::{
-    cell::RefCell,
-    io::{self, Result},
-    rc::Rc,
-    sync::mpsc::Receiver,
-};
+use std::
+    io::{self, Result}
+;
 use traits::ThisFrame;
 mod app;
 mod file_reader;

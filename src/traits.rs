@@ -12,5 +12,5 @@ pub trait ThisFrame {
     fn handle_key_event(&mut self,app: &mut App, key_event: KeyEvent);
 
     fn new() -> Self;
-    fn get_type(self) -> String ;
+    fn get_type(&self) -> String ;
 }

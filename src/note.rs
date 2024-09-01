@@ -1,28 +1,27 @@
-use std::{cell::RefCell, fmt::Display, fs, path::Path, rc::Rc, str::Lines};
+use std::{fmt::Display, fs, path::Path};
 
 use crate::{
     app::{App, CurrentFrame, InputMode},
     file_reader::write_file,
     traits::ThisFrame,
 };
-use crate::{
-    file_reader::parse_file,
-    utils::{rc_rc, RcRc},
-};
+use crate::
+    file_reader::parse_file
+;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Styled, Stylize},
     symbols::border,
-    text::{Line, Span, Text, ToSpan, ToText},
+    text::{Line, Span, Text},
     widgets::{
         block::{Position, Title},
-        Block, BorderType, Borders, Paragraph, Widget,
+        Block, Paragraph, Widget, Wrap,
     },
 };
 use regex::Regex;
 
-#[derive(Debug, Clone)]
+#[derive(Debug,PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Tag(pub String);
 
 #[derive(Debug, Clone)]
@@ -83,7 +82,7 @@ impl ThisFrame for Note {
             old_title: None,
         }
     }
-    fn get_type(self) -> String {
+    fn get_type(&self) -> String {
         "Note".to_owned()
     }
     fn handle_key_event(&mut self, app: &mut App, key_event: KeyEvent) {
@@ -196,13 +195,44 @@ impl ThisFrame for Note {
                 }
             }
             (KeyCode::Down, InputMode::Normal | InputMode::Insert) => {
-                if app.cursor_row < Text::raw(&note.text).lines.len() - 1 {
-                    app.cursor_row += 1;
+                let lines: &[Line] = &Text::raw(&note.text).lines;
+                if app.cursor_row < lines.len() - 1 {
+                    let len = lines[app.cursor_row + 1].to_string().len();
+                    if app.cursor_column >= len {
+                        app.cursor_column = len;
+                        app.cursor_row += 1;
+                    } else {
+                        app.cursor_row += 1;
+                    }
                 }
             }
             (KeyCode::Left, InputMode::Normal | InputMode::Insert) => {
                 if app.cursor_column > 0 {
                     app.cursor_column -= 1;
+                }
+            }
+            (KeyCode::End, InputMode::Normal | InputMode::Insert) => {
+                let lines: &[Line] = &Text::raw(&note.text).lines;
+                app.cursor_column = lines[app.cursor_row].to_string().len() - 1;
+            }
+            (KeyCode::Home, InputMode::Normal | InputMode::Insert) => {
+                app.cursor_column = 0;
+            }
+            (KeyCode::Char('w'), InputMode::Normal) => {
+                let line = &Text::raw(&note.text).lines[app.cursor_row].to_string();
+                if app.cursor_column < line.len() {
+                    let split = line.split_at(app.cursor_column + 1);
+                    app.cursor_column = match split.1.find(" ") {
+                        Some(idx) => app.cursor_column + idx + 1,
+                        None => line.len()
+                    }
+                }
+            }
+            (KeyCode::Char('b'), InputMode::Normal) => {
+                let line = &Text::raw(&note.text).lines[app.cursor_row].to_string();
+                if app.cursor_column > 0 {
+                    let split = line.split_at(app.cursor_column - 1);
+                    app.cursor_column = split.0.rfind(" ").unwrap_or(0);
                 }
             }
             (KeyCode::Right, InputMode::Normal | InputMode::Insert) => {
@@ -289,24 +319,18 @@ impl Widget for &Note {
     where
         Self: Sized,
     {
-        let note_instruction = self.get_instructions();
         let title_text = if self.is_active {
             self.title.clone().green().bold()
         } else {
             self.title.clone().green()
         };
 
-        let title: Title = Title::from(title_text);
+        let title: Title = Title::from(title_text.bold());
         let mut my_border = border::ROUNDED;
         my_border.vertical_left = border::DOUBLE.vertical_left;
         my_border.horizontal_bottom = border::DOUBLE.horizontal_bottom;
         let mut block = Block::bordered()
             .title(title.alignment(Alignment::Center))
-            .title(
-                note_instruction
-                    .alignment(Alignment::Center)
-                    .position(Position::Bottom),
-            )
             .border_set(my_border)
             .style(Color::Black);
         if self.is_active {
@@ -331,28 +355,34 @@ impl Widget for &Note {
 
         let binding = self.text.clone();
         let lines: Vec<Line> = binding.split("\n").map(Line::raw).collect::<Vec<Line>>();
-        let mut text_vec: Vec<Line> = vec![] ;
+        let mut text_vec: Vec<Line> = vec![];
         for line in lines.clone() {
             let mut new_line: Vec<Span> = vec![];
-            let vec_line = line.to_owned().to_string().split_inclusive(" ").to_owned().map(|token| token.to_string()).collect::<Vec<String>>();
+            let vec_line = line
+                .to_owned()
+                .to_string()
+                .split_inclusive(" ")
+                .to_owned()
+                .map(|token| token.to_string())
+                .collect::<Vec<String>>();
 
-
-            for token in vec_line
-                {
-                    if token.starts_with("#") {
-                        let spn = token.clone().magenta();
-                        new_line.push(spn);
-                    } else {
-                        let spn = token.clone().green();
-                        new_line.push(spn);
-                    }
-            };
+            for token in vec_line {
+                if token.starts_with("#") {
+                    let spn = token.clone().magenta();
+                    new_line.push(spn);
+                } else {
+                    let spn = token.clone().green();
+                    new_line.push(spn);
+                }
+            }
             text_vec.push(Line::from(new_line));
         }
 
         let text = Text::from(text_vec);
+        let wrap: Wrap = Wrap { trim: true };
 
         Paragraph::new(text)
+            .wrap(wrap)
             .left_aligned()
             .block(block)
             .render(area, buf);

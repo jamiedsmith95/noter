@@ -56,6 +56,21 @@ pub fn get_notes(path: &str) -> Vec<RcRc<Note>> {
 
 pub fn parse_file(file_contents: String, path: &Path) -> RcRc<Note> {
     let note_text = &file_contents;
+    let (tags, links) = get_tags_links(&file_contents);
+    let title = path.file_stem().unwrap();
+    rc_rc(Note {
+        title: title.to_str().unwrap().to_owned(),
+        text: note_text.to_owned(),
+        tags: if tags.is_empty() { None } else { Some(tags) },
+        links: if links.is_empty() { None } else { Some(links) },
+        mode: InputMode::Normal,
+        edited: false,
+        is_active: false,
+        old_title: None,
+    })
+}
+
+pub fn get_tags_links(file_contents: &String) -> (Vec<Tag>, Vec<Link>) {
     let mut tags: Vec<Tag> = vec![];
     let link_regex = Regex::new(r"]\((.+)\)").unwrap();
     let mut links: Vec<Link> = vec![];
@@ -70,17 +85,7 @@ pub fn parse_file(file_contents: String, path: &Path) -> RcRc<Note> {
             tags.push(Tag(token.to_owned()));
         }
     }
-    let title = path.file_stem().unwrap();
-    rc_rc(Note {
-        title: title.to_str().unwrap().to_owned(),
-        text: note_text.to_owned(),
-        tags: if tags.is_empty() { None } else { Some(tags) },
-        links: if links.is_empty() { None } else { Some(links) },
-        mode: InputMode::Normal,
-        edited: false,
-        is_active: false,
-        old_title: None,
-    })
+    (tags, links)
 }
 
 pub fn write_file(note: &mut Note) {

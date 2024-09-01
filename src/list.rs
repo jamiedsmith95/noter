@@ -6,14 +6,14 @@ use ratatui::widgets::{Block, Paragraph};
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::str::FromStr;
 use style::Styled;
 
 use ratatui::widgets::block::Title;
 
 use crate::app::{App, CurrentFrame};
-use crate::file_reader::get_notes;
+use crate::file_reader::{get_notes, get_tags_links};
+use crate::note::Tag;
 use crate::utils::{rc_rc, RcRc};
 use crate::{note::Note, traits::ThisFrame};
 
@@ -23,6 +23,8 @@ pub struct MyList {
     pub index: usize,
     pub path: PathBuf,
     pub is_active: bool,
+    pub is_search: bool,
+    pub search: Option<String>,
 }
 
 impl Display for MyList {
@@ -53,16 +55,20 @@ impl ThisFrame for MyList {
             index: 0,
             path: PathBuf::from_str(path.as_str()).unwrap(),
             is_active: true,
+            is_search: false,
+            search: None,
         }
     }
     fn get_instructions(&self) -> ratatui::widgets::block::Title {
         Title::from(text::Line::from(vec![
             " Quit ".into(),
             "<q>".bold().red(),
+            " Search tags ".into(),
+            "<s>".bold().blue(),
             " Scroll Up ".into(),
             "<UP>".bold().blue(),
             " Scroll Down".into(),
-            "<DOWN".bold().blue(),
+            "<DOWN>".bold().blue(),
             " Select Note ".into(),
             "<ENTER>".bold().blue(),
             " New Note ".into(),
@@ -70,35 +76,96 @@ impl ThisFrame for MyList {
         ]))
     }
 
-    fn get_type(self) -> String {
+    fn get_type(&self) -> String {
         "List".to_string()
     }
 
     fn handle_key_event(&mut self, app: &mut App, key_event: KeyEvent) {
-        match key_event.code {
-            KeyCode::Char('q') => app.exit(),
-            KeyCode::Char('n') => {
+        // let list = &app.note_list;
+        match (key_event.code, self.is_search) {
+            (KeyCode::Char('q'), false) => app.exit(),
+            (KeyCode::Char('n'), false) => {
                 app.note_list.is_active = false;
                 app.note = rc_rc(Note::create_note());
                 let mut note = app.note.borrow_mut();
                 note.is_active = true;
                 app.current_frame = CurrentFrame::Note;
+                app.cursor_column = 0;
             }
-            KeyCode::Up => {
+            (KeyCode::Backspace, true) => {
+                if app.cursor_column == 0 {
+                } else {
+                    let search = &app.note_list.search.to_owned().unwrap();
+                    let (first, second) = search.split_at(app.cursor_column);
+                    app.cursor_column -= 1;
+                    app.note_list.search.replace(first.split_at(app.cursor_column).0.to_string() + second);
+                }
+            }
+            (KeyCode::Up, false) => {
                 if app.note_list.index == 0 {
                     app.note_list.index = self.notes.len() - 1;
                 } else {
                     app.note_list.index -= 1;
                 }
             }
-            KeyCode::Down => {
+            (KeyCode::Left, true) => {
+                if app.cursor_column > 0 {
+                    app.cursor_column -= 1;
+                }
+            }
+            (KeyCode::Right, true) => {
+                if  app.note_list.search.as_ref().is_some_and(|search| search.len() > app.cursor_column) {
+                    app.cursor_column += 1;
+                }
+            }
+            (KeyCode::Char('s'), false) => {
+                app.note_list.is_search = true;
+                app.cursor_column = 0;
+                app.note_list.index = 0;
+            }
+            (KeyCode::Esc, true) => {
+                app.note_list.is_search = false;
+            }
+            (KeyCode::Char(c), true) => {
+                if app.note_list.search.is_none() {
+                    let search = &mut app.note_list.search;
+                    search.replace(c.to_string());
+                    app.cursor_column +=1;
+                } else {
+                    let search = app.note_list.search.clone();
+                    let (first, second) = search
+                        .as_ref()
+                        .unwrap()
+                        .split_at(app.cursor_column)
+                        .to_owned();
+                    app.note_list
+                        .search
+                        .replace(first.to_owned().to_string() + &c.to_string() + second);
+                    app.cursor_column += 1;
+                }
+            }
+            (KeyCode::Down, false) => {
                 if app.note_list.index == self.notes.len() - 1 {
                     app.note_list.index = 0;
                 } else {
                     app.note_list.index += 1;
                 }
             }
-            KeyCode::Enter => {
+            (KeyCode::Up, true) => {
+                if app.note_list.index == 0 {
+                    app.note_list.index = self.filter_list(self.search.clone()).unwrap().len() - 1;
+                } else {
+                    app.note_list.index -= 1;
+                }
+            }
+            (KeyCode::Down, true) => {
+                if self.filter_list(self.search.clone()).is_some_and(|notes| notes.len() == app.note_list.index + 1) {
+                    app.note_list.index = 0;
+                } else {
+                    app.note_list.index += 1;
+                }
+            }
+            (KeyCode::Enter, false) => {
                 app.note = app
                     .note_list
                     .notes
@@ -108,6 +175,20 @@ impl ThisFrame for MyList {
                 app.note_list.is_active = false;
                 app.note.borrow_mut().is_active = true;
                 app.current_frame = CurrentFrame::Note;
+                app.cursor_column = 0;
+            }
+            (KeyCode::Enter, true) => {
+                app.note = app
+                    .note_list
+                    .filter_list(self.search.clone())
+                    .unwrap()
+                    .get(app.note_list.index)
+                    .unwrap()
+                    .to_owned();
+                app.note_list.is_active = false;
+                app.note.borrow_mut().is_active = true;
+                app.current_frame = CurrentFrame::Note;
+                app.cursor_column = 0;
             }
             _ => {}
         }
@@ -143,22 +224,27 @@ impl StatefulWidget for &MyList {
         let title = Title::from(title_text);
         let mut block = Block::bordered()
             .title(title.alignment(Alignment::Center))
-            .title(
-                self.get_instructions()
-                    .alignment(Alignment::Center)
-                    .position(Position::Bottom),
-            )
             .border_set(symbols::border::ROUNDED);
         if self.is_active {
             block = block.set_style(Color::White);
         } else {
             block = block.set_style(Color::Green)
         }
-        let list: Vec<String> = state
-            .1
-            .iter()
-            .map(|note| note.borrow_mut().title.to_string())
-            .collect();
+        let list: Vec<String>;
+        if self.is_search {
+            list = self
+                .filter_list(self.search.clone())
+                .unwrap()
+                .iter()
+                .map(|note| note.borrow().title.to_string())
+                .collect();
+        } else {
+            list = state
+                .1
+                .iter()
+                .map(|note| note.borrow_mut().title.to_string())
+                .collect();
+        };
         let mut count = 0;
         let text: Vec<text::Line> = list
             .iter()
@@ -172,10 +258,55 @@ impl StatefulWidget for &MyList {
                 text::Line::raw(title).style(colour)
             })
             .collect();
-        Paragraph::new(text)
-            .left_aligned()
-            .block(block)
-            .bg(Color::Black)
-            .render(area, buf);
+        if self.is_search {
+            let layout = Layout::vertical(Constraint::from_percentages([98, 2]));
+            let [area, search_area] = layout.areas(area);
+            Paragraph::new("search: ".to_string() + &self.search.clone().unwrap_or("".to_string()))
+                .left_aligned()
+                .bg(Color::Black)
+                .render(search_area, buf);
+            Paragraph::new(text)
+                .left_aligned()
+                .block(block)
+                .bg(Color::Black)
+                .render(area, buf);
+        } else {
+            Paragraph::new(text)
+                .left_aligned()
+                .block(block)
+                .bg(Color::Black)
+                .render(area, buf);
+        }
+    }
+}
+
+impl MyList {
+    pub fn filter_list(&self, search: Option<String>) -> Option<Vec<RcRc<Note>>> {
+        let search_tags: Vec<Tag> = match search {
+            Some(tags) => tags
+                .split_whitespace()
+                .map(|tag| Tag("#".to_string() + tag))
+                .collect(),
+            None => return Some(self.notes.clone()),
+        };
+        if search_tags.is_empty() {
+            return Some(self.notes.clone());
+        }
+
+        let mut notes = self.notes.clone();
+        notes = notes
+            .iter()
+            .filter(|note| {
+                note.borrow()
+                    .tags
+                    .clone()
+                    .is_some_and(|tags| tags.iter().any(|tag| search_tags.contains(tag)))
+            })
+            .map(|note| note.to_owned())
+            .collect();
+        if notes.is_empty() {
+            return Some(self.notes.clone());
+        }
+        Some(notes)
     }
 }
