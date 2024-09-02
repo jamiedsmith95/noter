@@ -1,13 +1,11 @@
 use std::{fmt::Display, fs, path::Path};
 
+use crate::file_reader::parse_file;
 use crate::{
     app::{App, CurrentFrame, InputMode},
     file_reader::write_file,
     traits::ThisFrame,
 };
-use crate::
-    file_reader::parse_file
-;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Alignment, Rect},
@@ -21,7 +19,7 @@ use ratatui::{
 };
 use regex::Regex;
 
-#[derive(Debug,PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Tag(pub String);
 
 #[derive(Debug, Clone)]
@@ -125,9 +123,9 @@ impl ThisFrame for Note {
                     .lines()
                     .map(Line::raw)
                     .collect::<Vec<ratatui::prelude::Line>>();
-                match start_lines.len() {
-                    2.. => {
-                        let end_lines = start_lines.split_off(app.cursor_row + 1);
+                match start_lines.len() - app.cursor_row {
+                    3.. => {
+                        let end_lines = start_lines.split_off(app.cursor_row);
                         let current_line = start_lines.pop().unwrap().to_string();
                         // let current_line = end_lines.first().unwrap().to_string();
                         if app.cursor_column == 0 {
@@ -147,15 +145,18 @@ impl ThisFrame for Note {
 
                         note.text = Text::from(start_lines).to_string();
                     }
-                    1 => {
-                        let line = &start_lines[0];
+                    2 => {
+                        let line = &start_lines.last().unwrap();
                         let line = &line.to_string();
                         let (first, second) = line.split_at(app.cursor_column);
                         note.text = Text::from(vec![first.into(), second.into()]).to_string();
                     }
-                    0 => {
-                        note.text = "\n\r".to_string();
+                    1 => {
+                        let line  = Line::raw("\n\r".to_string());
+                        start_lines.push(line);
+                        note.text = Text::from(start_lines).to_string();
                     }
+                    _ => {}
                 }
                 app.cursor_column = 0;
                 app.cursor_row += 1;
@@ -213,7 +214,7 @@ impl ThisFrame for Note {
             }
             (KeyCode::End, InputMode::Normal | InputMode::Insert) => {
                 let lines: &[Line] = &Text::raw(&note.text).lines;
-                app.cursor_column = lines[app.cursor_row].to_string().len() - 1;
+                app.cursor_column = lines[app.cursor_row].to_string().len();
             }
             (KeyCode::Home, InputMode::Normal | InputMode::Insert) => {
                 app.cursor_column = 0;
@@ -224,7 +225,7 @@ impl ThisFrame for Note {
                     let split = line.split_at(app.cursor_column + 1);
                     app.cursor_column = match split.1.find(" ") {
                         Some(idx) => app.cursor_column + idx + 1,
-                        None => line.len()
+                        None => line.len(),
                     }
                 }
             }
@@ -295,10 +296,20 @@ impl ThisFrame for Note {
             (KeyCode::Char(c), InputMode::Insert) => {
                 note.edited = true;
                 let mut lines = Text::raw(&note.text).lines;
-                let mut line = lines.get(app.cursor_row).unwrap().to_string();
-                let (first, second) = line.split_at(app.cursor_column);
-                line = first.to_string().to_owned() + &c.to_string() + second;
-                lines[app.cursor_row] = Line::raw(line);
+
+                let mut line = if app.cursor_row == lines.len() {
+                    "".to_string()
+                } else {
+                    lines.get(app.cursor_row).unwrap().to_string()
+                };
+               if line.is_empty() {
+                    let line = c.to_string();
+                    lines.push(Line::raw(line));
+                } else {
+                    let (first, second) = line.split_at(app.cursor_column);
+                    line = first.to_string().to_owned() + &c.to_string() + second;
+                    lines[app.cursor_row] = Line::raw(line);
+                };
                 let text: Text = lines.into();
                 note.text = text.to_string();
                 app.cursor_column += 1;
