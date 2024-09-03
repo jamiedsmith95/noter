@@ -106,7 +106,7 @@ impl ThisFrame for Note {
                 } else {
                     note.edited = true;
                     let (first, second) = note.title.as_mut_str().split_at(app.cursor_column);
-                    app.cursor_column -= 1;
+                    app.cursor_column = app.cursor_column.saturating_sub(1);
                     note.title = first.split_at(app.cursor_column).0.to_string() + second;
                 }
             }
@@ -114,7 +114,7 @@ impl ThisFrame for Note {
                 note.edited = true;
                 let (first, second) = note.title.as_mut_str().split_at(app.cursor_column);
                 note.title = first.to_string() + &c.to_string() + second;
-                app.cursor_column += 1;
+                app.cursor_column = app.cursor_column.saturating_add(1);
             }
             (KeyCode::Enter, InputMode::Insert) => {
                 note.edited = true;
@@ -124,9 +124,11 @@ impl ThisFrame for Note {
                     .map(Line::raw)
                     .collect::<Vec<ratatui::prelude::Line>>();
                 match start_lines.len() - app.cursor_row {
-                    3.. => {
-                        let end_lines = start_lines.split_off(app.cursor_row);
-                        let current_line = start_lines.pop().unwrap().to_string();
+                    1.. => {
+                        let mut end_lines = start_lines.split_off(app.cursor_row);
+                        end_lines.reverse();
+                        let current_line = end_lines.pop().unwrap().to_string();
+                        end_lines.reverse();
                         // let current_line = end_lines.first().unwrap().to_string();
                         if app.cursor_column == 0 {
                             start_lines.push(Line::raw(""));
@@ -134,10 +136,15 @@ impl ThisFrame for Note {
                             end_lines
                                 .iter()
                                 .for_each(|line| start_lines.push(line.to_owned()));
-                        } else {
+                        } else if app.cursor_column < current_line.len() + 1 {
                             let (first, second) = current_line.split_at(app.cursor_column);
                             start_lines.push(Line::raw(first));
                             start_lines.push(Line::raw(second));
+                            end_lines
+                                .iter()
+                                .for_each(|line| start_lines.push(line.to_owned()));
+                        } else {
+                            start_lines.push(Line::raw(""));
                             end_lines
                                 .iter()
                                 .for_each(|line| start_lines.push(line.to_owned()));
@@ -145,21 +152,25 @@ impl ThisFrame for Note {
 
                         note.text = Text::from(start_lines).to_string();
                     }
-                    2 => {
-                        let line = &start_lines.last().unwrap();
-                        let line = &line.to_string();
-                        let (first, second) = line.split_at(app.cursor_column);
-                        note.text = Text::from(vec![first.into(), second.into()]).to_string();
-                    }
-                    1 => {
-                        let line  = Line::raw("\n\r".to_string());
-                        start_lines.push(line);
-                        note.text = Text::from(start_lines).to_string();
+                    0 => {
+                        if start_lines
+                            .get(app.cursor_row)
+                            .is_some_and(|line| line.to_string().len() < app.cursor_column - 1)
+                        {
+                            let line = &start_lines.last().unwrap();
+                            let line = &line.to_string();
+                            let (first, second) = line.split_at(app.cursor_column);
+                            note.text = Text::from(vec![first.into(), second.into()]).to_string();
+                        } else {
+                            let line = Line::raw(" ".to_string());
+                            start_lines.push(line);
+                            note.text = Text::from(start_lines).to_string();
+                        }
                     }
                     _ => {}
                 }
                 app.cursor_column = 0;
-                app.cursor_row += 1;
+                app.cursor_row = app.cursor_row.saturating_add(1);
             }
             (KeyCode::Enter, InputMode::EditTitle) => {
                 note.mode = InputMode::Normal;
@@ -181,35 +192,35 @@ impl ThisFrame for Note {
             }
             (KeyCode::Left, InputMode::EditTitle) => {
                 if app.cursor_column > 0 {
-                    app.cursor_column -= 1;
+                    app.cursor_column = app.cursor_column.saturating_sub(1);
                 }
             }
             (KeyCode::Right, InputMode::EditTitle) => {
                 if app.cursor_column < self.title.len() {
-                    app.cursor_column += 1;
+                    app.cursor_column = app.cursor_column.saturating_add(1);
                 }
             }
             (KeyCode::Up, InputMode::Normal | InputMode::Insert) => {
                 if app.cursor_row > 0 {
-                    app.cursor_row -= 1;
+                    app.cursor_row = app.cursor_row.saturating_sub(1);
                     app.cursor_column = 0;
                 }
             }
             (KeyCode::Down, InputMode::Normal | InputMode::Insert) => {
                 let lines: &[Line] = &Text::raw(&note.text).lines;
                 if app.cursor_row < lines.len() - 1 {
-                    let len = lines[app.cursor_row + 1].to_string().len();
+                    let len = lines[app.cursor_row.saturating_add(1)].to_string().len();
                     if app.cursor_column >= len {
                         app.cursor_column = len;
-                        app.cursor_row += 1;
+                        app.cursor_row = app.cursor_row.saturating_add(1);
                     } else {
-                        app.cursor_row += 1;
+                        app.cursor_row = app.cursor_row.saturating_add(1);
                     }
                 }
             }
             (KeyCode::Left, InputMode::Normal | InputMode::Insert) => {
                 if app.cursor_column > 0 {
-                    app.cursor_column -= 1;
+                    app.cursor_column = app.cursor_column.saturating_sub(1);
                 }
             }
             (KeyCode::End, InputMode::Normal | InputMode::Insert) => {
@@ -222,7 +233,7 @@ impl ThisFrame for Note {
             (KeyCode::Char('w'), InputMode::Normal) => {
                 let line = &Text::raw(&note.text).lines[app.cursor_row].to_string();
                 if app.cursor_column < line.len() {
-                    let split = line.split_at(app.cursor_column + 1);
+                    let split = line.split_at(app.cursor_column.saturating_add(1));
                     app.cursor_column = match split.1.find(" ") {
                         Some(idx) => app.cursor_column + idx + 1,
                         None => line.len(),
@@ -232,18 +243,15 @@ impl ThisFrame for Note {
             (KeyCode::Char('b'), InputMode::Normal) => {
                 let line = &Text::raw(&note.text).lines[app.cursor_row].to_string();
                 if app.cursor_column > 0 {
-                    let split = line.split_at(app.cursor_column - 1);
+                    let split = line.split_at(app.cursor_column.saturating_sub(1));
                     app.cursor_column = split.0.rfind(" ").unwrap_or(0);
                 }
             }
             (KeyCode::Right, InputMode::Normal | InputMode::Insert) => {
-                if app.cursor_column
-                    < Text::raw(self.text.clone())
-                        .lines
-                        .get(app.cursor_row)
-                        .unwrap()
-                        .to_string()
-                        .len()
+                let lines = Text::raw(self.text.clone()).lines;
+                if lines.len() <= app.cursor_row {
+                } else if app.cursor_column
+                    < lines.get(app.cursor_row).unwrap().to_string().len() - 1
                 {
                     app.cursor_column += 1;
                 }
@@ -259,7 +267,7 @@ impl ThisFrame for Note {
                 if app.cursor_column == 0 {
                     if app.cursor_row == 0 || app.cursor_row == lines.len() {
                         if app.cursor_row == lines.len() {
-                            app.cursor_row -= 1;
+                            app.cursor_row = app.cursor_row.saturating_sub(1);
                             app.cursor_column = lines.last().unwrap().to_string().len();
                         }
                     } else {
@@ -279,14 +287,14 @@ impl ThisFrame for Note {
                         }
                         note.text = text.to_string();
                         note.edited = true;
-                        app.cursor_row -= 1;
+                        app.cursor_row = app.cursor_row.saturating_sub(1);
                     }
                 } else {
                     note.edited = true;
                     let mut lines = Text::raw(&note.text).lines;
                     let mut line = lines.get(app.cursor_row).unwrap().to_string();
                     let (first, second) = line.split_at(app.cursor_column);
-                    app.cursor_column -= 1;
+                    app.cursor_column = app.cursor_column.saturating_sub(1);
                     line = first.split_at(app.cursor_column).0.to_string() + second;
                     lines[app.cursor_row] = Line::raw(line);
                     let text: Text = lines.into();
@@ -297,14 +305,21 @@ impl ThisFrame for Note {
                 note.edited = true;
                 let mut lines = Text::raw(&note.text).lines;
 
-                let mut line = if app.cursor_row == lines.len() {
+                let mut line = if app.cursor_row == lines.len().saturating_add(1) {
                     "".to_string()
                 } else {
-                    lines.get(app.cursor_row).unwrap().to_string()
+                    lines
+                        .get(app.cursor_row)
+                        .unwrap_or(&Line::raw(""))
+                        .to_string()
                 };
-               if line.is_empty() {
+                if line.is_empty() {
                     let line = c.to_string();
-                    lines.push(Line::raw(line));
+                    if lines.len() <= app.cursor_row {
+                        lines.push(Line::raw(line));
+                    } else {
+                        lines[app.cursor_row] = Line::raw(line);
+                    };
                 } else {
                     let (first, second) = line.split_at(app.cursor_column);
                     line = first.to_string().to_owned() + &c.to_string() + second;
@@ -312,7 +327,7 @@ impl ThisFrame for Note {
                 };
                 let text: Text = lines.into();
                 note.text = text.to_string();
-                app.cursor_column += 1;
+                app.cursor_column = app.cursor_column.saturating_add(1);
             }
             _ => {}
         };
@@ -390,10 +405,8 @@ impl Widget for &Note {
         }
 
         let text = Text::from(text_vec);
-        let wrap: Wrap = Wrap { trim: true };
 
         Paragraph::new(text)
-            .wrap(wrap)
             .left_aligned()
             .block(block)
             .render(area, buf);

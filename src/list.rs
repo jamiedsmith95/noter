@@ -97,7 +97,7 @@ impl ThisFrame for MyList {
                 } else {
                     let search = &app.note_list.search.to_owned().unwrap();
                     let (first, second) = search.split_at(app.cursor_column);
-                    app.cursor_column -= 1;
+                    app.cursor_column = app.cursor_column.saturating_sub(1);
                     app.note_list.search.replace(first.split_at(app.cursor_column).0.to_string() + second);
                 }
             }
@@ -105,17 +105,17 @@ impl ThisFrame for MyList {
                 if app.note_list.index == 0 {
                     app.note_list.index = self.notes.len() - 1;
                 } else {
-                    app.note_list.index -= 1;
+                    app.note_list.index = app.note_list.index.saturating_sub(1);
                 }
             }
             (KeyCode::Left, true) => {
                 if app.cursor_column > 0 {
-                    app.cursor_column -= 1;
+                    app.cursor_column = app.cursor_column.saturating_sub(1);
                 }
             }
             (KeyCode::Right, true) => {
                 if  app.note_list.search.as_ref().is_some_and(|search| search.len() > app.cursor_column) {
-                    app.cursor_column += 1;
+                    app.cursor_column = app.cursor_column.saturating_add(1);
                 }
             }
             (KeyCode::Char('s'), false) => {
@@ -130,7 +130,7 @@ impl ThisFrame for MyList {
                 if app.note_list.search.is_none() {
                     let search = &mut app.note_list.search;
                     search.replace(c.to_string());
-                    app.cursor_column +=1;
+                    app.cursor_column = app.cursor_column.saturating_add(1);
                 } else {
                     let search = app.note_list.search.clone();
                     let (first, second) = search
@@ -141,28 +141,28 @@ impl ThisFrame for MyList {
                     app.note_list
                         .search
                         .replace(first.to_owned().to_string() + &c.to_string() + second);
-                    app.cursor_column += 1;
+                    app.cursor_column = app.cursor_column.saturating_add(1);
                 }
             }
             (KeyCode::Down, false) => {
                 if app.note_list.index == self.notes.len() - 1 {
                     app.note_list.index = 0;
                 } else {
-                    app.note_list.index += 1;
+                    app.note_list.index = app.note_list.index.saturating_add(1);
                 }
             }
             (KeyCode::Up, true) => {
                 if app.note_list.index == 0 {
                     app.note_list.index = self.filter_list(self.search.clone()).unwrap().len() - 1;
                 } else {
-                    app.note_list.index -= 1;
+                    app.note_list.index = app.note_list.index.saturating_sub(1);
                 }
             }
             (KeyCode::Down, true) => {
                 if self.filter_list(self.search.clone()).is_some_and(|notes| notes.len() == app.note_list.index + 1) {
                     app.note_list.index = 0;
                 } else {
-                    app.note_list.index += 1;
+                    app.note_list.index = app.note_list.index.saturating_add(1);
                 }
             }
             (KeyCode::Enter, false) => {

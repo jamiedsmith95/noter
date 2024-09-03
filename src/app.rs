@@ -12,6 +12,7 @@ use ratatui::{
     },
 };
 use symbols::border;
+use text::{ToLine, ToSpan};
 
 use crate::{
     list::MyList,
@@ -168,8 +169,10 @@ impl Widget for &App {
             CurrentFrame::List => note_list_ref.get_instructions(),
         };
 
+        let pos = Title::from(vec![self.cursor_column.to_span()," ".to_span(),self.cursor_row.to_span()]);
         Paragraph::new(instructions.content)
             .alignment(Alignment::Center)
             .render(area, buf);
+        Paragraph::new(pos.content).alignment(Alignment::Right).render(area,buf);
     }
 }
