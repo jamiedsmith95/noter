@@ -1,6 +1,5 @@
 use std::{
-    fmt::{self, Display},
-    io::{self, Result},
+    fmt::{self, Display}, io::{self, Result}
 };
 
 use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
@@ -115,12 +114,12 @@ impl App {
                             + note_area.x
                             + (note_area.width as f64 / 2.).ceil() as u16
                             - (note.title.len() as f64 / 2.).ceil() as u16,
-                        self.cursor_row as u16,
+                        0,
                     ));
                 }
                 _ => frame.set_cursor_position(layout::Position::new(
                     self.cursor_column as u16 + note_area.x + 1,
-                    self.cursor_row as u16 + 1,
+                    self.cursor_row.saturating_add(1) as u16,
                 )),
             }
         }

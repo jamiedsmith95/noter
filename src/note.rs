@@ -167,7 +167,6 @@ impl ThisFrame for Note {
                             note.text = Text::from(start_lines).to_string();
                         }
                     }
-                    _ => {}
                 }
                 app.cursor_column = 0;
                 app.cursor_row = app.cursor_row.saturating_add(1);
