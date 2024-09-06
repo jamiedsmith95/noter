@@ -25,6 +25,7 @@ pub struct MyList {
     pub is_active: bool,
     pub is_search: bool,
     pub search: Option<String>,
+    pub tag_all: bool,
 }
 
 impl Display for MyList {
@@ -57,6 +58,7 @@ impl ThisFrame for MyList {
             is_active: true,
             is_search: false,
             search: None,
+            tag_all: false,
         }
     }
     fn get_instructions(&self) -> ratatui::widgets::block::Title {
@@ -98,7 +100,9 @@ impl ThisFrame for MyList {
                     let search = &app.note_list.search.to_owned().unwrap();
                     let (first, second) = search.split_at(app.cursor_column);
                     app.cursor_column = app.cursor_column.saturating_sub(1);
-                    app.note_list.search.replace(first.split_at(app.cursor_column).0.to_string() + second);
+                    app.note_list
+                        .search
+                        .replace(first.split_at(app.cursor_column).0.to_string() + second);
                 }
             }
             (KeyCode::Up, false) => {
@@ -114,7 +118,12 @@ impl ThisFrame for MyList {
                 }
             }
             (KeyCode::Right, true) => {
-                if  app.note_list.search.as_ref().is_some_and(|search| search.len() > app.cursor_column) {
+                if app
+                    .note_list
+                    .search
+                    .as_ref()
+                    .is_some_and(|search| search.len() > app.cursor_column)
+                {
                     app.cursor_column = app.cursor_column.saturating_add(1);
                 }
             }
@@ -143,6 +152,7 @@ impl ThisFrame for MyList {
                         .replace(first.to_owned().to_string() + &c.to_string() + second);
                     app.cursor_column = app.cursor_column.saturating_add(1);
                 }
+                app.note_list.index = 0;
             }
             (KeyCode::Down, false) => {
                 if app.note_list.index == self.notes.len() - 1 {
@@ -159,7 +169,10 @@ impl ThisFrame for MyList {
                 }
             }
             (KeyCode::Down, true) => {
-                if self.filter_list(self.search.clone()).is_some_and(|notes| notes.len() == app.note_list.index + 1) {
+                if self
+                    .filter_list(self.search.clone())
+                    .is_some_and(|notes| notes.len() == app.note_list.index + 1)
+                {
                     app.note_list.index = 0;
                 } else {
                     app.note_list.index = app.note_list.index.saturating_add(1);
@@ -176,6 +189,10 @@ impl ThisFrame for MyList {
                 app.note.borrow_mut().is_active = true;
                 app.current_frame = CurrentFrame::Note;
                 app.cursor_column = 0;
+            }
+            (KeyCode::Tab, true) => {
+                app.note_list.tag_all = !self.tag_all;
+                app.note_list.index = 0;
             }
             (KeyCode::Enter, true) => {
                 app.note = app
@@ -294,16 +311,29 @@ impl MyList {
         }
 
         let mut notes = self.notes.clone();
-        notes = notes
-            .iter()
-            .filter(|note| {
-                note.borrow()
-                    .tags
-                    .clone()
-                    .is_some_and(|tags| tags.iter().any(|tag| search_tags.contains(tag)))
-            })
-            .map(|note| note.to_owned())
-            .collect();
+
+        notes = match self.tag_all {
+            true => notes
+                .iter()
+                .filter(|note| {
+                    note.borrow()
+                        .tags
+                        .clone()
+                        .is_some_and(|tags| tags.iter().any(|tag| search_tags.contains(tag)))
+                })
+                .map(|note| note.to_owned())
+                .collect(),
+            false => notes
+                .iter()
+                .filter(|note| {
+                    note.borrow()
+                        .tags
+                        .clone()
+                        .is_some_and(|tags| search_tags.iter().all(|search| tags.contains(search)))
+                })
+                .map(|note| note.to_owned())
+                .collect(),
+        };
         if notes.is_empty() {
             return Some(self.notes.clone());
         }

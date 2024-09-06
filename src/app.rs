@@ -112,7 +112,7 @@ impl App {
                     frame.set_cursor_position(layout::Position::new(
                         self.cursor_column as u16
                             + note_area.x
-                            + (note_area.width as f64 / 2.).ceil() as u16
+                            + (note_area.width as f64 / 2.).floor() as u16
                             - (note.title.len() as f64 / 2.).ceil() as u16,
                         0,
                     ));
