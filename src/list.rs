@@ -275,32 +275,11 @@ impl StatefulWidget for &MyList {
                 text::Line::raw(title).style(colour)
             })
             .collect();
-        if self.is_search {
-            let layout = Layout::vertical(Constraint::from_percentages([98, 2]));
-            let [area, search_area] = layout.areas(area);
-            let search_area_mod = Rect {
-                x: search_area.x,
-                y: search_area.y,
-                width: search_area.width + self.search.clone().unwrap_or("".to_string()).len() as u16,
-                height: search_area.height,
-
-            };
-            Paragraph::new(": ".to_string() + &self.search.clone().unwrap_or("".to_string()))
-                .left_aligned()
-                .bg(Color::Black)
-                .render(search_area_mod, buf);
-            Paragraph::new(text)
-                .left_aligned()
-                .block(block)
-                .bg(Color::Black)
-                .render(area, buf);
-        } else {
-            Paragraph::new(text)
-                .left_aligned()
-                .block(block)
-                .bg(Color::Black)
-                .render(area, buf);
-        }
+        Paragraph::new(text)
+            .left_aligned()
+            .block(block)
+            .bg(Color::Black)
+            .render(area, buf);
     }
 }
 
@@ -319,7 +298,7 @@ impl MyList {
 
         let mut notes = self.notes.clone();
 
-        notes = match self.tag_all {
+        notes = match !self.tag_all {
             true => notes
                 .iter()
                 .filter(|note| {

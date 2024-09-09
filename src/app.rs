@@ -78,8 +78,8 @@ impl App {
         if self.note_list.is_active {
             if self.note_list.is_search {
                 frame.set_cursor_position(layout::Position::new(
-                    self.cursor_column as u16 + list_area.x + 2, // 8 for search:
-                    instructions.y - 1, // use instructions as has same vertical as search
+                    self.cursor_column as u16 + list_area.x + 8, // 8 for search:
+                    instructions.y, // use instructions as has same vertical as search
                 ));
                 frame.render_widget(
                     &self
@@ -172,6 +172,11 @@ impl Widget for &App {
         Paragraph::new(instructions.content)
             .alignment(Alignment::Center)
             .render(area, buf);
+        if self.note_list.is_search {
+        Paragraph::new("search: ".to_string() + self.note_list.search.as_ref().unwrap_or(&"".to_string()))
+            .alignment(Alignment::Left)
+            .render(area, buf);
+        }
         Paragraph::new(pos.content).alignment(Alignment::Right).render(area,buf);
     }
 }
