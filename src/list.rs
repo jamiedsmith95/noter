@@ -278,10 +278,17 @@ impl StatefulWidget for &MyList {
         if self.is_search {
             let layout = Layout::vertical(Constraint::from_percentages([98, 2]));
             let [area, search_area] = layout.areas(area);
-            Paragraph::new("search: ".to_string() + &self.search.clone().unwrap_or("".to_string()))
+            let search_area_mod = Rect {
+                x: search_area.x,
+                y: search_area.y,
+                width: search_area.width + self.search.clone().unwrap_or("".to_string()).len() as u16,
+                height: search_area.height,
+
+            };
+            Paragraph::new(": ".to_string() + &self.search.clone().unwrap_or("".to_string()))
                 .left_aligned()
                 .bg(Color::Black)
-                .render(search_area, buf);
+                .render(search_area_mod, buf);
             Paragraph::new(text)
                 .left_aligned()
                 .block(block)

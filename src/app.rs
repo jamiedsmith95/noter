@@ -78,7 +78,7 @@ impl App {
         if self.note_list.is_active {
             if self.note_list.is_search {
                 frame.set_cursor_position(layout::Position::new(
-                    self.cursor_column as u16 + list_area.x + 8, // 8 for search:
+                    self.cursor_column as u16 + list_area.x + 2, // 8 for search:
                     instructions.y - 1, // use instructions as has same vertical as search
                 ));
                 frame.render_widget(

@@ -20,6 +20,7 @@ use ratatui::{
 use regex::Regex;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[repr(transparent)]
 pub struct Tag(pub String);
 
 #[derive(Debug, Clone)]
@@ -53,6 +54,8 @@ impl ThisFrame for Note {
                 "<t>".blue().bold(),
                 " Save Note ".into(),
                 "<s>".blue().bold(),
+                " Search Tags ".into(),
+                "<T>".blue().bold(),
                 " Insert Mode  ".into(),
                 "<i>".blue().bold(),
                 " Quit ".into(),
@@ -100,6 +103,13 @@ impl ThisFrame for Note {
                 note.mode = InputMode::EditTitle;
                 note.old_title = Some(self.title.clone());
                 app.cursor_column = 0;
+            }
+            (KeyCode::Char('T'), InputMode::Normal) => {
+                app.note_list.is_active = true;
+                app.current_frame = CurrentFrame::List;
+                app.note_list.is_search = true;
+                app.note_list.search = self.tags_to_string();
+                app.note_list.index = 0;
             }
             (KeyCode::Backspace, InputMode::EditTitle) => {
                 if app.cursor_column == 0 {
@@ -336,6 +346,12 @@ impl ThisFrame for Note {
 impl Note {
     pub fn create_note() -> Self {
         Self::default()
+    }
+    pub fn tags_to_string(&self) -> Option<String> {
+        let tags = self.tags.clone()?;
+        let tag_str: Vec<String> = tags.iter().map(|tag| tag.0[1..].to_owned()).collect();
+        Some(tag_str.join(" "))
+
     }
 }
 
