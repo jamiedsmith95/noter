@@ -1,3 +1,6 @@
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::mpsc::Receiver;
 use std::{fmt::Display, fs, path::Path};
 
 use crate::file_reader::parse_file;
@@ -95,7 +98,11 @@ impl ThisFrame for Note {
             }
             (KeyCode::Char('s'), InputMode::Normal) => {
                 if note.edited {
-                    write_file(&mut note.clone());
+                    if app.note_list.local_list {
+                        write_file(Some(app.note_list.local_path.clone()), &mut note.clone());
+                    } else {
+                        write_file(None, &mut note.clone());
+                    }
                     note.edited = false;
                 }
             }
@@ -184,18 +191,32 @@ impl ThisFrame for Note {
             (KeyCode::Enter, InputMode::EditTitle) => {
                 note.mode = InputMode::Normal;
                 app.cursor_column = 0;
+                let cur_path = match app.note_list.local_list {
+                    true => PathBuf::from_str(
+                        (app.note_list.local_path.to_string_lossy() + "/notes/")
+                            .to_string()
+                            .as_str(),
+                    )
+                    .unwrap(),
+                    false => app.note_list.path.clone(),
+                };
                 note.edited = false;
                 note.is_active = false;
+                let path = if app.note_list.local_list {
+                    Some(cur_path)
+                } else {
+                    None
+                };
                 if self.old_title.is_none() || self.old_title.as_mut().unwrap().is_empty() {
-                    write_file(&mut note);
+                    write_file(path, &mut note);
                     app.note_list
                         .notes
                         .push(parse_file(note.text.clone(), Path::new(&note.title)));
                 } else {
-                    let mut path = app.note_list.path.clone();
-                    path.push(note.old_title.as_ref().unwrap().to_owned() + ".md");
-                    fs::remove_file(path).unwrap();
-                    write_file(&mut note);
+                    let mut old_path = path.clone().unwrap();
+                    old_path.push(note.old_title.as_ref().unwrap().to_owned() + ".md");
+                    fs::remove_file(old_path).unwrap();
+                    write_file(path,&mut note);
                 }
                 note.is_active = true;
             }
@@ -351,7 +372,6 @@ impl Note {
         let tags = self.tags.clone()?;
         let tag_str: Vec<String> = tags.iter().map(|tag| tag.0[1..].to_owned()).collect();
         Some(tag_str.join(" "))
-
     }
 }
 

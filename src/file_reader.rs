@@ -50,7 +50,6 @@ pub fn get_notes(path: &str) -> Vec<RcRc<Note>> {
         let parsed = parse_file(read_file(file), file);
         contents.push(parsed);
     }
-    println!("lengthof contents {}", contents.len());
     contents
 }
 
@@ -78,7 +77,6 @@ pub fn get_tags_links(file_contents: &String) -> (Vec<Tag>, Vec<Link>) {
     for c in t {
         let extract = *c.extract::<1>().1.first().unwrap();
         links.push(Link(extract.to_owned()));
-        println!("{:?}", extract);
     }
     for token in file_contents.split_whitespace() {
         if token.starts_with("#") {
@@ -88,7 +86,7 @@ pub fn get_tags_links(file_contents: &String) -> (Vec<Tag>, Vec<Link>) {
     (tags, links)
 }
 
-pub fn write_file(note: &mut Note) {
+pub fn write_file(skip_path: Option<PathBuf>,note: &mut Note) {
     let home = std::env::home_dir().unwrap();
     let path = home.to_str().unwrap().to_string() + "/.config/noter/config";
     
@@ -96,8 +94,12 @@ pub fn write_file(note: &mut Note) {
 
     let config_build = Config::builder().add_source(config::File::with_name(&path)).build().unwrap() ;
 
-    let path = config_build.try_deserialize::<HashMap<String,String>>().unwrap().get("path").unwrap().to_owned();
+    let mut path = config_build.try_deserialize::<HashMap<String,String>>().unwrap().get("path").unwrap().to_owned();
     let test_location = "/mnt/g/My Drive/JamiesVault/".to_string();
+    if skip_path.is_some() {
+        path = skip_path.unwrap().to_str().unwrap().to_string();
+    }
     let file_name = path + &note.title + ".md";
     fs::write(file_name, note.clone().text.into_bytes()).unwrap();
+
 }

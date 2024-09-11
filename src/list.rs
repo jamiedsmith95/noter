@@ -26,6 +26,8 @@ pub struct MyList {
     pub is_search: bool,
     pub search: Option<String>,
     pub tag_all: bool,
+    pub local_list: bool,
+    pub local_path: PathBuf,
 }
 
 impl Display for MyList {
@@ -51,6 +53,7 @@ impl ThisFrame for MyList {
             .unwrap()
             .to_owned();
         let found_notes = get_notes(path.as_str());
+        let cwd = std::env::current_dir().unwrap();
         MyList {
             notes: found_notes,
             index: 0,
@@ -59,6 +62,8 @@ impl ThisFrame for MyList {
             is_search: false,
             search: None,
             tag_all: false,
+            local_list: false,
+            local_path: cwd,
         }
     }
     fn get_instructions(&self) -> ratatui::widgets::block::Title {
@@ -73,6 +78,8 @@ impl ThisFrame for MyList {
             "<DOWN>".bold().blue(),
             " Select Note ".into(),
             "<ENTER>".bold().blue(),
+            " Toggle Dir ".into(),
+            "<TAB>".bold().blue(),
             " New Note ".into(),
             "<n>".bold().blue(),
         ]))
@@ -93,6 +100,24 @@ impl ThisFrame for MyList {
                 note.is_active = true;
                 app.current_frame = CurrentFrame::Note;
                 app.cursor_column = 0;
+            }
+            (KeyCode::Tab, false) => {
+                if !self.local_list {
+                    let builder = std::fs::DirBuilder::new();
+                    app.note_list.local_list = true;
+                    let path = PathBuf::from_str(&(self.local_path.to_string_lossy() + "/notes"));
+                    builder.create(path.clone().unwrap()).unwrap_or(());
+                    let mut notes = get_notes(path.unwrap_or(self.path.clone()).to_str().unwrap());
+                    if notes.is_empty() {
+                        notes.push(rc_rc(Note::create_note()))
+                    }
+                    app.note_list.notes = notes;
+                    app.note_list.index = 0
+                } else {
+                    app.note_list.local_list = false;
+                    app.note_list.notes = get_notes(self.path.to_str().unwrap());
+                    app.note_list.index = 0
+                }
             }
             (KeyCode::Backspace, true) => {
                 if app.cursor_column == 0 {
